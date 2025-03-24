@@ -1,52 +1,57 @@
-import { refreshAccessToken,  } from './api';
-import { jwtDecode } from 'jwt-decode';// Добавьте этот импорт
-/**
- * Проверяет, авторизован ли пользователь и соответствует ли его роль текущей странице.
- * @param {string} requiredRole - Требуемая роль пользователя ("teacher" или "admin").
- * @param {object} router - Объект роутера Next.js.
- * @returns {Promise<{ isAuthenticated: boolean, login: string }>} - Объект с флагом авторизации и логином пользователя.
- */
+// src/utils/auth.js
+import { refreshAccessToken } from './api';
+import { jwtDecode } from 'jwt-decode';
+
 export const checkAuth = async (requiredRole, router) => {
     let token = localStorage.getItem("accessToken");
     let refreshTokenValue = localStorage.getItem("refreshToken");
 
-    // Если refreshToken отсутствует, перенаправляем на страницу логина
     if (!refreshTokenValue) {
         console.warn("Отсутствует refreshToken. Перенаправление на страницу логина.");
         router.push("/login");
         return { isAuthenticated: false, login: '' };
     }
 
-    // Если accessToken отсутствует, пытаемся обновить его
     if (!token) {
-        token = await refreshAccessToken(refreshTokenValue);
-        if (!token) {
-            console.warn("Не удалось обновить accessToken. Перенаправление на страницу логина.");
+        try {
+            token = await refreshAccessToken(refreshTokenValue);
+            if (!token) {
+                console.warn("Не удалось обновить accessToken. Перенаправление на страницу логина.");
+                router.push("/login");
+                return { isAuthenticated: false, login: '' };
+            }
+            localStorage.setItem("accessToken", token);
+        } catch (error) {
+            console.error("Ошибка при обновлении токена:", error);
             router.push("/login");
             return { isAuthenticated: false, login: '' };
         }
-        localStorage.setItem("accessToken", token);
     }
 
     try {
-        // Декодируем токен, чтобы получить роль
         const decodedToken = jwtDecode(token);
+        
+        // Проверка статуса из токена
+        if (decodedToken.status === 'Заблокированный') {
+            console.warn("Пользователь заблокирован. Перенаправление на страницу логина.");
+            localStorage.removeItem("accessToken");
+            localStorage.removeItem("refreshToken");
+            router.push("/login");
+            return { isAuthenticated: false, login: '' };
+        }
+
+        // Проверка роли
         const userRole = decodedToken.role;
+        const roleMismatch = 
+            (requiredRole === "admin" && userRole !== "Администратор") ||
+            (requiredRole === "teacher" && userRole !== "Преподаватель");
 
-        // Проверяем, соответствует ли роль требуемой
-        if (requiredRole === "admin" && userRole !== "Администратор") {
+        if (roleMismatch) {
             console.warn("Роль не соответствует. Перенаправление на страницу логина.");
             router.push("/login");
             return { isAuthenticated: false, login: '' };
         }
 
-        if (requiredRole === "teacher" && userRole !== "Преподаватель") {
-            console.warn("Роль не соответствует. Перенаправление на страницу логина.");
-            router.push("/login");
-            return { isAuthenticated: false, login: '' };
-        }
-
-        // Возвращаем флаг авторизации и логин пользователя
         return { isAuthenticated: true, login: decodedToken.login };
     } catch (error) {
         console.error("Ошибка при проверке авторизации:", error);
@@ -54,4 +59,3 @@ export const checkAuth = async (requiredRole, router) => {
         return { isAuthenticated: false, login: '' };
     }
 };
-

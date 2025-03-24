@@ -1,16 +1,40 @@
-//backend/src/middleware/authMiddleware.js
+// backend/src/middleware/authMiddleware.js
 import jwt from 'jsonwebtoken';
+import { User } from '../models/index.js'; // Убедитесь в правильности пути
 
-export const verifyToken = (req, res, next) => {
+export const verifyToken = async (req, res, next) => {
     const token = req.headers.authorization?.split(" ")[1]; // Bearer <token>
 
-    if (!token) return res.status(403).json({ error: 'Нет доступа' });
+    if (!token) {
+        return res.status(403).json({ error: 'Требуется авторизация' });
+    }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(401).json({ error: 'Неверный токен' });
+    try {
+        // Сначала проверяем токен
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Затем проверяем пользователя в базе (только если нужно проверить статус)
+        const user = await User.findOne({ 
+            where: { login: decoded.login },
+            attributes: ['status'] // Получаем только статус для оптимизации
+        });
 
-        console.log("✅ Токен расшифрован:", decoded); // 🔹 Проверяем содержимое токена
-        req.user = decoded;  
+        if (!user) {
+            return res.status(403).json({ error: 'Пользователь не найден' });
+        }
+
+        if (user.status === 'Заблокированный') {
+            return res.status(403).json({ error: 'Аккаунт заблокирован' });
+        }
+
+        // Добавляем декодированные данные в запрос
+        req.user = decoded;
         next();
-    });
+    } catch (err) {
+        // Улучшенная обработка ошибок
+        if (err.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: 'Срок действия токена истек' });
+        }
+        return res.status(401).json({ error: 'Неверный токен' });
+    }
 };

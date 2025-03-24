@@ -25,7 +25,11 @@ export const login = async (req, res) => {
         }
 
         // Генерация токенов
-        const accessToken = jwt.sign({ login: user.login, role: user.role }, ACCESS_SECRET, { expiresIn: '15m' });
+        const accessToken = jwt.sign({ 
+            login: user.login, 
+            role: user.role,
+            status: user.status  // Добавляем статус
+        }, ACCESS_SECRET, { expiresIn: '15m' });
         const refreshToken = jwt.sign({ login: user.login }, REFRESH_SECRET, { expiresIn: '7d' });
 
         // Обновляем refresh-токен в базе
