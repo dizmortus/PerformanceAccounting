@@ -56,7 +56,6 @@ export const generateStatementDocument = async (statementId) => {
         // Определяем ступень высшего образования
         const educationLevel = String(statement.group.educationLevel) === "1" ? "первая ступень" : "вторая ступень";
 
-
         // Определяем курс по семестру (семестр / 2)
         const courseNumber = Math.ceil(statement.semester / 2);
 
@@ -67,10 +66,11 @@ export const generateStatementDocument = async (statementId) => {
             ? `${facultyCode}/${statementCode.slice(facultyCode.length)}`
             : statementCode;
 
-        // Получаем студентов группы
+        // Получаем студентов группы и сортируем их по алфавиту (по фамилии)
         const students = await Student.findAll({
             where: { groupId: statement.groupId },
-            attributes: ["id", "lastName", "firstName", "patronymic"]
+            attributes: ["id", "lastName", "firstName", "patronymic"],
+            order: [['lastName', 'ASC']] // Сортировка по фамилии в алфавитном порядке
         });
 
         console.log(`[${new Date().toISOString()}] Найдено студентов: ${students.length}`);
@@ -90,6 +90,12 @@ export const generateStatementDocument = async (statementId) => {
         }, {});
 
         console.log(`[${new Date().toISOString()}] Карта оценок:`, gradeMap);
+
+        // Фильтруем студентов, которые не явились или не допущены
+        const presentStudents = students.filter(student => {
+            const grade = gradeMap[student.id];
+            return grade !== "не явился" && grade !== "не допущен";
+        });
 
         // Формируем данные для шаблона
         const statementData = {
@@ -121,7 +127,7 @@ export const generateStatementDocument = async (statementId) => {
                               ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "не явился", "не допущен"].includes(grade) ? grade : ""
                 };
             }),
-            presentStudents: students.length - grades.filter(g => g.value === "не явился").length,
+            presentStudents: presentStudents.length, // Количество присутствующих (без не явившихся и не допущенных)
             absentStudents: grades.filter(g => g.value === "не явился" || g.value === "не допущен").length,
             grade10: grades.filter(g => g.value === "10").length,
             grade9: grades.filter(g => g.value === "9").length,
@@ -139,7 +145,6 @@ export const generateStatementDocument = async (statementId) => {
         };
 
         console.log(`[${new Date().toISOString()}] Данные для генерации документа сформированы`);
-
 
         // Загружаем шаблон документа
         const templatePath = path.join(__dirname, "../../templates", "Ведомость.docx");

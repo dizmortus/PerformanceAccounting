@@ -25,7 +25,10 @@ const StudentForm = ({
     useEffect(() => {
         const loadStudents = async () => {
             const studentsData = await fetchStudents(selectedGroup);
-            const sortedStudents = studentsData.sort((a, b) => a.id - b.id); // Сортировка по возрастанию id
+            // Сортировка по алфавиту (по фамилии)
+            const sortedStudents = studentsData.sort((a, b) => 
+                a.lastName.localeCompare(b.lastName)
+            );
             setStudents(sortedStudents);
         };
 
@@ -138,9 +141,9 @@ const StudentForm = ({
                         >
                             <span className="flex flex-col">
                                 <span className="font-semibold text-gray-900">
-                                    {student.id}. {student.lastName} {student.firstName[0]}. {student.patronymic ? student.patronymic[0] + '.' : ''}
+                                    {index + 1}. {student.lastName} {student.firstName[0]}. {student.patronymic ? student.patronymic[0] + '.' : ''}
                                 </span>
-                                <span className="text-sm text-gray-600">Группа: {student.group}</span>
+                                <span className="text-sm text-gray-600">Зачетная книжка №{student.id}</span>
                             </span>
 
                             {/* Выпадающий список оценки */}
