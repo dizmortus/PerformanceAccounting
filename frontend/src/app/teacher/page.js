@@ -34,24 +34,35 @@ export default function TeacherDashboard() {
         return '';
     });
 
-    // Функция выбора группы
-    const handleGroupSelect = useCallback(async (groupId) => {
-        if (!isAuthenticated) return; // Не выполняем действия, если пользователь не авторизован
-        setSelectedGroup(groupId);
+// В компоненте TeacherDashboard
+const handleGroupSelect = useCallback(async (groupId) => {
+    if (!isAuthenticated) return;
+    
+    // Если передана пустая строка - снимаем выбор
+    if (!groupId) {
+        setSelectedGroup('');
+        setFilteredStatements([]);
         if (typeof window !== "undefined") {
-            localStorage.setItem("selectedGroup", groupId);
+            localStorage.removeItem("selectedGroup");
         }
+        return;
+    }
+    
+    setSelectedGroup(groupId);
+    if (typeof window !== "undefined") {
+        localStorage.setItem("selectedGroup", groupId);
+    }
 
-        const filtered = statements.filter(statement => statement.groupId === groupId);
-        const updatedStatements = await Promise.all(
-            filtered.map(async (statement) => ({
-                ...statement,
-                disciplineName: (await fetchDisciplineName(statement.disciplineId)).name,
-            }))
-        );
+    const filtered = statements.filter(statement => statement.groupId === groupId);
+    const updatedStatements = await Promise.all(
+        filtered.map(async (statement) => ({
+            ...statement,
+            disciplineName: (await fetchDisciplineName(statement.disciplineId)).name,
+        }))
+    );
 
-        setFilteredStatements(updatedStatements);
-    }, [statements, isAuthenticated]);
+    setFilteredStatements(updatedStatements);
+}, [statements, isAuthenticated]);
 
     // Восстанавливаем состояние при загрузке
     useEffect(() => {

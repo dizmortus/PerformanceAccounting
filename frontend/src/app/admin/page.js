@@ -17,7 +17,7 @@ export default function AdminDashboard() {
     const router = useRouter();
     const [login, setLogin] = useState('');
     const [isMounted, setIsMounted] = useState(false);
-    const [isAuthenticated, setIsAuthenticated] = useState(false); // Флаг авторизации
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState(() => {
         if (typeof window !== "undefined") {
             return localStorage.getItem("selectedCategory") || null;
@@ -41,25 +41,32 @@ export default function AdminDashboard() {
         authenticate();
     }, [router]);
 
-    if (!isAuthenticated) return null;
-
     const handleCategorySelect = (categoryId) => {
-        if (!isAuthenticated) return; // Не выполняем действия, если пользователь не авторизован
-        setSelectedCategory(categoryId);
-        if (typeof window !== "undefined") {
-            localStorage.setItem("selectedCategory", categoryId);
+        if (!isAuthenticated) return;
+        
+        // Если кликнули на уже выбранную категорию - снимаем выбор
+        if (selectedCategory === categoryId) {
+            setSelectedCategory(null);
+            if (typeof window !== "undefined") {
+                localStorage.removeItem("selectedCategory");
+            }
+        } else {
+            setSelectedCategory(categoryId);
+            if (typeof window !== "undefined") {
+                localStorage.setItem("selectedCategory", categoryId);
+            }
         }
     };
 
     const handleCancel = () => {
-        if (!isAuthenticated) return; // Не выполняем действия, если пользователь не авторизован
+        if (!isAuthenticated) return;
         setSelectedCategory(null);
         if (typeof window !== "undefined") {
             localStorage.removeItem("selectedCategory");
         }
     };
 
-    if (!isMounted || !isAuthenticated) return null; // Не рендерим компонент, если пользователь не авторизован
+    if (!isMounted || !isAuthenticated) return null;
 
     return (
         <div className="flex h-screen text-gray-900 bg-gradient-to-r from-teal-300 to-blue-400 relative">

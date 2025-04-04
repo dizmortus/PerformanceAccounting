@@ -75,25 +75,128 @@ export const fetchPossibleGrades = async () => {
     return response.ok ? response.json() : [];
 };
 
-export const submitGrades = async (selectedStatementId, grades) => {
+export const submitGrades = async ({ statementId, lessonId, grades }) => {
     try {
-        for (const studentId in grades) {
-            if (grades[studentId]) {
-                const response = await fetchWithAuth(`/api/grades/set/${selectedStatementId}/${studentId}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ value: grades[studentId] }),
-                });
-
-                if (!response.ok) throw new Error("Ошибка при установке оценки");
-            }
-        }
-        return { success: true };
+      const requests = Object.entries(grades)
+        .filter(([_, value]) => value !== undefined && value !== null && value !== '')
+        .map(async ([studentId, value]) => {
+          const body = {
+            studentId,
+            value,
+            ...(statementId ? { statementId } : { lessonId })
+          };
+  
+          const response = await fetchWithAuth('/api/grades/set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+  
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Ошибка для студента ${studentId}`);
+          }
+          return { studentId, success: true };
+        });
+  
+      const results = await Promise.all(requests);
+      return { success: true, results };
     } catch (error) {
-        return { success: false, error };
+      console.error('Ошибка при отправке оценок:', error);
+      return { 
+        success: false, 
+        error: error.message,
+        failedStudents: error.message.includes('студента') ? [error.message.split(' ').pop()] : []
+      };
     }
-};
+  };
 
+  export const fetchGrades = async ({ statementId, lessonId, studentIds }) => {
+    try {
+      // Валидация параметров
+      if (!statementId && !lessonId) {
+        throw new Error('Необходимо указать statementId или lessonId');
+      }
+      if (statementId && lessonId) {
+        throw new Error('Укажите только statementId или только lessonId');
+      }
+  
+      // Формируем query параметры
+      const queryParams = new URLSearchParams();
+      if (statementId) queryParams.append('statementId', statementId);
+      if (lessonId) queryParams.append('lessonId', lessonId);
+      
+      // Добавляем studentIds как отдельные параметры
+      if (studentIds?.length) {
+        studentIds.forEach(id => queryParams.append('studentIds', id));
+      }
+  
+      const response = await fetchWithAuth(`/api/grades?${queryParams.toString()}`);
+  
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Ошибка при получении оценок');
+      }
+  
+      const data = await response.json();
+      
+      // Проверяем структуру ответа
+      if (!data || !data.grades) {
+        throw new Error('Некорректный формат ответа сервера');
+      }
+  
+      return {
+        success: true,
+        entityType: data.entityType,
+        grades: data.grades
+      };
+    } catch (error) {
+      console.error('Ошибка при получении оценок:', error);
+      return {
+        success: false,
+        error: error.message,
+        grades: []
+      };
+    }
+  };
+
+// Клиентская функция
+export const deleteGrades = async ({ statementId, lessonId, studentIds }) => {
+    try {
+      // Валидация
+      if (!studentIds?.length) {
+        throw new Error('Необходимо указать studentIds');
+      }
+  
+      if (!statementId && !lessonId) {
+        throw new Error('Укажите statementId или lessonId');
+      }
+  
+      if (statementId && lessonId) {
+        throw new Error('Укажите только statementId или только lessonId');
+      }
+  
+      const response = await fetchWithAuth('/api/grades', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentIds,
+          [statementId ? 'statementId' : 'lessonId']: statementId || lessonId
+        })
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Ошибка при удалении оценок');
+      }
+  
+      return await response.json();
+  
+    } catch (error) {
+      console.error('Ошибка при удалении оценок:', error);
+      throw error;
+    }
+  };
 // Скачивание ведомости
 export const downloadStatement = async (statementId) => {
     try {
@@ -479,3 +582,214 @@ export const handleLogout = async (router) => {
         throw error;
     }
 };
+
+export const createNewLesson = async (lessonData) => {
+    try {
+        const response = await fetchWithAuth('/api/lessons', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                statementId: lessonData.statementId,
+                date: new Date(lessonData.date).toISOString()
+            }),
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            return { 
+                success: false, 
+                error: data.error || 'Ошибка при создании занятия',
+                lesson: null
+            };
+        }
+
+        return { 
+            success: data.success, 
+            lesson: data.lesson,
+            error: null
+        };
+        
+    } catch (error) {
+        console.error('Error creating lesson:', error);
+        return { 
+            success: false, 
+            error: error.message,
+            lesson: null
+        };
+    }
+};
+  
+  /**
+   * Получает занятия по ID ведомости
+   * @param {string|number} statementId - ID ведомости
+   * @returns {Promise<Array>} - Массив занятий
+   */
+  export const fetchLessonsByStatementId = async (statementId) => {
+    try {
+      const response = await fetchWithAuth(`/api/statements/${statementId}/lessons`);
+      
+      if (!response.ok) {
+        // Если статус 404, возвращаем пустой массив вместо ошибки
+        if (response.status === 404) {
+          return [];
+        }
+        throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+      }
+  
+      const lessons = await response.json();
+      
+      if (!Array.isArray(lessons)) {
+        throw new Error('Некорректный формат данных занятий');
+      }
+  
+      return lessons.map(lesson => ({
+        id: lesson.id,
+        statementId: lesson.statementId,
+        date: new Date(lesson.date) // Преобразуем строку в Date объект
+      }));
+  
+    } catch (error) {
+      console.error(`Ошибка при получении занятий для ведомости ${statementId}:`, error);
+      throw error;
+    }
+  };
+
+  // В файле api.js добавляем новую функцию
+export const generateStatement = async (statementId) => {
+    try {
+        const response = await fetchWithAuth(`/api/statements/${statementId}/generate`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error("Ошибка при генерации ведомости");
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error("Ошибка при генерации ведомости:", error);
+        throw error;
+    }
+};
+
+/**
+ * Получает средние оценки студентов по ведомости
+ * @param {string|number} statementId - ID ведомости
+ * @returns {Promise<Object>} - Объект с studentId в качестве ключа и средней оценкой в качестве значения
+ */
+export const fetchAverageGrades = async (statementId) => {
+    try {
+      const response = await fetchWithAuth(`/api/statements/${statementId}/average-grades`);
+      
+      if (!response.ok) {
+        throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+      }
+  
+      const averages = await response.json();
+      
+      if (typeof averages !== 'object' || averages === null) {
+        throw new Error('Некорректный формат данных средних оценок');
+      }
+  
+      // Преобразуем строковые ключи в числа (если нужно)
+      const result = {};
+      for (const [studentId, average] of Object.entries(averages)) {
+        result[Number(studentId)] = average;
+      }
+  
+      return result;
+  
+    } catch (error) {
+      console.error(`Ошибка при получении средних оценок для ведомости ${statementId}:`, error);
+      throw error;
+    }
+  };
+  
+  /**
+   * Получает количество пропусков студентов по ведомости
+   * @param {string|number} statementId - ID ведомости
+   * @returns {Promise<Object>} - Объект с studentId в качестве ключа и количеством пропусков в качестве значения
+   */
+  export const fetchMissedLessonsCount = async (statementId) => {
+    try {
+      const response = await fetchWithAuth(`/api/statements/${statementId}/missed-lessons`);
+      
+      if (!response.ok) {
+        // Если нет данных (404), возвращаем пустой объект
+        if (response.status === 404) {
+          return {};
+        }
+        throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+      }
+  
+      const missedCounts = await response.json();
+      
+      if (typeof missedCounts !== 'object' || missedCounts === null) {
+        throw new Error('Некорректный формат данных пропусков');
+      }
+  
+      // Преобразуем строковые ключи в числа (если нужно)
+      const result = {};
+      for (const [studentId, count] of Object.entries(missedCounts)) {
+        result[Number(studentId)] = count;
+      }
+  
+      return result;
+  
+    } catch (error) {
+      console.error(`Ошибка при получении количества пропусков для ведомости ${statementId}:`, error);
+      throw error;
+    }
+  };
+  
+  /**
+   * Получает аналитику по ведомости (средние оценки и пропуски)
+   * @param {string|number} statementId - ID ведомости
+   * @returns {Promise<Object>} - Объект с аналитикой
+   */
+  export const fetchStatementAnalytics = async (statementId) => {
+    try {
+      // Используем Promise.all для параллельного выполнения запросов
+      const [averages, missedCounts] = await Promise.all([
+        fetchAverageGrades(statementId),
+        fetchMissedLessonsCount(statementId)
+      ]);
+  
+      return {
+        averages,
+        missedCounts
+      };
+    } catch (error) {
+      console.error(`Ошибка при получении аналитики для ведомости ${statementId}:`, error);
+      throw error;
+    }
+  };
+
+  export const changePassword = async (currentPassword, newPassword) => {
+    try {
+        const response = await fetchWithAuth('/api/users/change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                currentPassword,
+                newPassword
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при смене пароля');
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Ошибка при смене пароля:', error);
+        throw error;
+    }
+}

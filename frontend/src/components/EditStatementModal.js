@@ -22,6 +22,13 @@ const EditStatementModal = ({ statement, onClose }) => {
         return `${lastName} ${firstNameInitial}.${patronymicInitial}.`;
     };
 
+    // Функция для форматирования даты в формат, понятный input[type="date"]
+    const formatDateForInput = (dateString) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toISOString().split('T')[0];
+    };
+
     useEffect(() => {
         setLocalStatement(statement || {});
     }, [statement]);
@@ -64,7 +71,7 @@ const EditStatementModal = ({ statement, onClose }) => {
     };
 
     const handleSave = async () => {
-        const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType"];
+        const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "date"];
         const errors = {};
 
         requiredFields.forEach((field) => {
@@ -77,13 +84,24 @@ const EditStatementModal = ({ statement, onClose }) => {
             errors.semester = "Семестр должен быть числом от 1 до 10";
         }
 
+        // Валидация даты
+        if (localStatement.date && isNaN(new Date(localStatement.date).getTime())) {
+            errors.date = "Некорректная дата";
+        }
+
         if (Object.keys(errors).length > 0) {
             setValidationErrors(errors);
             return;
         }
 
         try {
-            await updateStatement(localStatement.id, localStatement);
+            // Форматируем дату перед отправкой
+            const statementToUpdate = {
+                ...localStatement,
+                date: localStatement.date ? new Date(localStatement.date).toISOString() : null
+            };
+            
+            await updateStatement(localStatement.id, statementToUpdate);
             setValidationErrors({});
             onClose();
         } catch (error) {
@@ -142,7 +160,7 @@ const EditStatementModal = ({ statement, onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.teacherLogin}</p>
                             )}
                         </div>
-
+    
                         {/* Выпадающее меню для дисциплины */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Дисциплина</label>
@@ -164,7 +182,7 @@ const EditStatementModal = ({ statement, onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.disciplineId}</p>
                             )}
                         </div>
-
+    
                         {/* Выпадающее меню для группы */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Группа</label>
@@ -186,14 +204,44 @@ const EditStatementModal = ({ statement, onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.groupId}</p>
                             )}
                         </div>
-
-                        {/* Остальные поля */}
+    
+                        {/* Поле для даты */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Дата</label>
+                            <input
+                                type="date"
+                                value={formatDateForInput(localStatement.date) || ""}
+                                onChange={(e) => handleChange(e, "date")}
+                                className={`w-full px-2 py-1 border rounded-lg ${
+                                    validationErrors.date ? "border-red-500" : ""
+                                }`}
+                            />
+                            {validationErrors.date && (
+                                <p className="text-red-500 text-sm mt-1">{validationErrors.date}</p>
+                            )}
+                        </div>
+    
+                        {/* Поле для часов практики с валидацией */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Часы практики</label>
                             <input
                                 type="number"
                                 value={localStatement.practiceHours || ""}
-                                onChange={(e) => handleChange(e, "practiceHours")}
+                                onChange={(e) => {
+                                    const value = parseInt(e.target.value);
+                                    if (value <= 0) {
+                                        setValidationErrors({
+                                            ...validationErrors,
+                                            practiceHours: "Часы практики должны быть больше 0"
+                                        });
+                                    } else {
+                                        const newErrors = {...validationErrors};
+                                        delete newErrors.practiceHours;
+                                        setValidationErrors(newErrors);
+                                        handleChange(e, "practiceHours");
+                                    }
+                                }}
+                                min="1"
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.practiceHours ? "border-red-500" : ""
                                 }`}
@@ -202,6 +250,8 @@ const EditStatementModal = ({ statement, onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
                             )}
                         </div>
+    
+                        {/* Остальные поля */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Семестр</label>
                             <input
@@ -235,7 +285,7 @@ const EditStatementModal = ({ statement, onClose }) => {
                             )}
                         </div>
                     </div>
-
+    
                     {/* Основные кнопки */}
                     <div className="flex justify-end space-x-4 mt-6">
                         <button
@@ -246,7 +296,7 @@ const EditStatementModal = ({ statement, onClose }) => {
                         </button>
                         <button
                             className="px-4 py-2 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 transition"
-                            onClick={() => setIsConfirmOpen(true)} // Открываем ConfirmModal
+                            onClick={() => setIsConfirmOpen(true)}
                         >
                             Удалить
                         </button>
@@ -259,7 +309,7 @@ const EditStatementModal = ({ statement, onClose }) => {
                     </div>
                 </div>
             </div>
-
+    
             {/* Модальные окна */}
             <ConfirmModal
                 isOpen={isConfirmOpen}

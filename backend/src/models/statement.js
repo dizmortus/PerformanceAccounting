@@ -58,6 +58,11 @@ export default (sequelize, DataTypes) => {
       },
       field: 'Тип аттестации'
     },
+    date: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'Дата'
+    },
     list: {
       type: DataTypes.STRING,
       allowNull: true,

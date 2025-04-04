@@ -204,3 +204,36 @@ export const getAllTeachers = async (req, res) => {
         res.status(500).json({ error: "Ошибка сервера", details: error.message });
     }
 };
+
+// Добавляем новый метод в controllers/userController.js
+export const changePassword = async (req, res) => {
+    const { login } = req.user; // Получаем логин из аутентифицированного пользователя
+    const { currentPassword, newPassword } = req.body;
+
+    try {
+        // 1. Находим пользователя
+        const user = await User.findOne({ where: { login } });
+        if (!user) {
+            return res.status(404).json({ error: "Пользователь не найден" });
+        }
+
+        // 2. Проверяем текущий пароль
+        const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!isPasswordValid) {
+            return res.status(400).json({ error: "Текущий пароль неверен" });
+        }
+
+        // 3. Хешируем новый пароль
+        const saltRounds = 10;
+        const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+
+        // 4. Обновляем пароль
+        await user.update({ passwordHash: newPasswordHash });
+
+        // 5. Возвращаем успешный ответ
+        res.json({ message: "Пароль успешно изменен" });
+    } catch (error) {
+        console.error("Ошибка при смене пароля:", error);
+        res.status(500).json({ error: "Ошибка сервера", details: error.message });
+    }
+};

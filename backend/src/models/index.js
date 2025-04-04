@@ -1,4 +1,3 @@
-// models/index.js
 import { Sequelize, DataTypes } from "sequelize";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
@@ -19,6 +18,7 @@ import groupModel from "./group.js";
 import studentModel from "./student.js";
 import disciplineModel from "./discipline.js";
 import statementModel from "./statement.js";
+import lessonModel from "./lesson.js";
 import gradeModel from "./grade.js";
 
 const sequelize = new Sequelize(config.development);
@@ -30,34 +30,62 @@ const Group = groupModel(sequelize, DataTypes);
 const Student = studentModel(sequelize, DataTypes);
 const Discipline = disciplineModel(sequelize, DataTypes);
 const Statement = statementModel(sequelize, DataTypes);
+const Lesson = lessonModel(sequelize, DataTypes);
 const Grade = gradeModel(sequelize, DataTypes);
 
 // Ассоциации
 Group.belongsTo(Specialty, { foreignKey: "specialtyId", as: "specialty" });
 Specialty.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
 
+// Связи для Ведомости
 Statement.belongsTo(Discipline, { foreignKey: "disciplineId", as: "discipline" });
 Statement.belongsTo(Group, { foreignKey: "groupId", as: "group" });
 Statement.belongsTo(User, { foreignKey: "teacherLogin", as: "teacher" });
-Statement.hasMany(Grade, { foreignKey: "statementId", as: "grades" });
+Statement.hasMany(Grade, { 
+  foreignKey: "statementId", 
+  as: "grades",
+  constraints: false // Отключаем автоматические ограничения для гибкости
+});
+Statement.hasMany(Lesson, { foreignKey: "statementId", as: "lessons" });
 
+// Связи для Занятий
+Lesson.belongsTo(Statement, { foreignKey: "statementId", as: "statement" });
+Lesson.hasMany(Grade, {
+  foreignKey: "lessonId",
+  as: "grades",
+  constraints: false // Отключаем автоматические ограничения для гибкости
+});
+
+// Обратные связи
 Discipline.hasMany(Statement, { foreignKey: "disciplineId", as: "statements" });
 Group.hasMany(Statement, { foreignKey: "groupId", as: "statements" });
 User.hasMany(Statement, { foreignKey: "teacherLogin", as: "statements" });
-// Связь Student → Group (Каждый студент принадлежит группе)
-Student.belongsTo(Group, { foreignKey: "groupId", as: "group" });
 
-// Связь Group → Student (Группа содержит множество студентов)
+// Связи для Студентов
+Student.belongsTo(Group, { foreignKey: "groupId", as: "group" });
 Group.hasMany(Student, { foreignKey: "groupId", as: "students" });
 
+// Связи для Оценок
+Grade.belongsTo(Statement, { 
+  foreignKey: "statementId", 
+  as: "statement",
+  constraints: false // Отключаем автоматические ограничения
+});
+Grade.belongsTo(Lesson, {
+  foreignKey: "lessonId",
+  as: "lesson",
+  constraints: false // Отключаем автоматические ограничения
+});
+Grade.belongsTo(Student, { foreignKey: "studentId", as: "student" });
 
+// Добавляем проверку на уровне модели (уже есть в gradeModel)
+// Sequelize будет проверять, что указана либо ведомость, либо занятие
 
 sequelize
   .sync({ force: false })
   .then(() => console.log("Database synced successfully"))
   .catch((err) => console.error("Error syncing database:", err));
 
-// Используем именованный экспорт
 export {
   sequelize,
   Sequelize,
@@ -68,5 +96,6 @@ export {
   Student,
   Discipline,
   Statement,
+  Lesson,
   Grade,
 };

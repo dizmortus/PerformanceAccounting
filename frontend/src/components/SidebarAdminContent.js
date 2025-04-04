@@ -2,7 +2,6 @@
 import { FaUsers, FaFileAlt, FaChevronRight } from 'react-icons/fa';
 
 const SidebarAdminContent = ({ selectedCategory, handleCategorySelect }) => {
-    // Категории для админской панели
     const categories = [
         { id: 'users', label: 'Пользователи', icon: <FaUsers /> },
         { id: 'statements', label: 'Ведомости', icon: <FaFileAlt /> },
@@ -10,12 +9,10 @@ const SidebarAdminContent = ({ selectedCategory, handleCategorySelect }) => {
 
     return (
         <>
-            {/* Заголовок */}
             <div className="mt-12 px-2">
                 <h2 className="text-lg font-semibold text-black text-center mb-3">Категории</h2>
             </div>
 
-            {/* Список категорий */}
             <div className="flex-grow overflow-y-auto space-y-3 p-2">
                 {categories.map((category) => (
                     <button 

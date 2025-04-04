@@ -1,17 +1,19 @@
-"use client";
+'use client';
 import { useState, useEffect } from 'react';
 import { FaSearch, FaUsers, FaChevronRight } from 'react-icons/fa';
 import { fetchGroups } from '../utils/api';
+import GroupSearchModal from './GroupSearchModal'; // Импортируем модальное окно
 
-const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect, setSearchOpen }) => {
+const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => {
     const [groups, setGroups] = useState([]);
+    const [isSearchOpen, setIsSearchOpen] = useState(false); // Состояние для модального окна
 
     // Загрузка групп
     useEffect(() => {
         const loadGroups = async () => {
             const uniqueGroupIds = [...new Set(statements.map(s => s.groupId))];
             const groupsData = await fetchGroups(uniqueGroupIds);
-            const sortedGroups = groupsData.sort((a, b) => a.id - b.id); // Сортировка по возрастанию id
+            const sortedGroups = groupsData.sort((a, b) => a.id - b.id);
             setGroups(sortedGroups);
         };
 
@@ -20,9 +22,12 @@ const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect, setSe
         }
     }, [statements]);
 
-    // Обработчик выбора группы
     const handleGroupSelect = (groupId) => {
-        onGroupSelect(groupId); // Вызываем колбэк из TeacherDashboard
+        if (selectedGroup === groupId) {
+            onGroupSelect('');
+        } else {
+            onGroupSelect(groupId);
+        }
     };
 
     return (
@@ -31,7 +36,7 @@ const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect, setSe
             <div className="absolute top-4 right-4 flex items-center space-x-4">
                 <button 
                     className="p-3 bg-gradient-to-r from-teal-500 to-blue-500 text-white rounded-full hover:from-teal-600 hover:to-blue-600 transition relative group text-lg"
-                    onClick={() => setSearchOpen(true)}
+                    onClick={() => setIsSearchOpen(true)}
                 >
                     <FaSearch />
                     <span className="absolute right-full mr-2 w-max bg-gray-300 text-gray-900 text-sm rounded p-1 opacity-0 group-hover:opacity-100 transition">Поиск</span>
@@ -66,6 +71,16 @@ const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect, setSe
                     </button>
                 ))}
             </div>
+
+            {/* Модальное окно поиска */}
+            <GroupSearchModal 
+                isOpen={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+                onGroupSelect={onGroupSelect}
+                selectedGroup={selectedGroup}
+                statements={statements}
+                groups={groups}
+            />
         </>
     );
 };

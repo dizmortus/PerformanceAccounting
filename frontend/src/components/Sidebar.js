@@ -1,9 +1,17 @@
-// components/Sidebar.js
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FaChevronLeft } from 'react-icons/fa';
 
 const Sidebar = ({ children }) => {
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    // Загружаем состояние из localStorage или используем true по умолчанию
+    const [sidebarOpen, setSidebarOpen] = useState(() => {
+        const savedState = typeof window !== 'undefined' ? localStorage.getItem('sidebarOpen') : null;
+        return savedState !== null ? JSON.parse(savedState) : true;
+    });
+
+    useEffect(() => {
+        // Сохраняем состояние в localStorage при изменении
+        localStorage.setItem('sidebarOpen', JSON.stringify(sidebarOpen));
+    }, [sidebarOpen]);
 
     const toggleSidebar = () => {
         setSidebarOpen((prev) => !prev);

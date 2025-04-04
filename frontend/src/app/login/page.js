@@ -9,17 +9,29 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const router = useRouter();
 
     useEffect(() => {
-        const token = localStorage.getItem('accessToken');
-        if (!token) return;
+        const accessToken = localStorage.getItem('accessToken');
+        const refreshToken = localStorage.getItem('refreshToken');
+        
+        if (!accessToken || !refreshToken) return;
 
         try {
-            const decoded = jwtDecode(token);
+            const decodedAccess = jwtDecode(accessToken);
+            const decodedRefresh = jwtDecode(refreshToken);
             
+            // Проверяем срок действия refresh-токена
+            const now = Date.now() / 1000;
+            if (decodedRefresh.exp < now) {
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                return;
+            }
+
             // Проверяем статус из токена
-            if (decoded.status === 'Заблокированный') {
+            if (decodedAccess.status === 'Заблокированный') {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
                 setError('Ваш аккаунт заблокирован. Обратитесь к администратору.');
@@ -27,9 +39,9 @@ export default function LoginPage() {
             }
 
             // Перенаправление по роли
-            if (decoded.role === 'Администратор') {
+            if (decodedAccess.role === 'Администратор') {
                 router.push('/admin');
-            } else if (decoded.role === 'Преподаватель') {
+            } else if (decodedAccess.role === 'Преподаватель') {
                 router.push('/teacher');
             }
         } catch (error) {
@@ -105,14 +117,23 @@ export default function LoginPage() {
                         />
                     </div>
                     <div>
-                        <input
-                            type="password"
-                            placeholder="Пароль"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                            required
-                        />
+                        <div className="relative">
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                placeholder="Пароль"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500 pr-10"
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-2 flex items-center text-gray-600"
+                            >
+                                {showPassword ? "👁" : "👁‍🗨"}
+                            </button>
+                        </div>
                     </div>
                     <button 
                         type="submit" 

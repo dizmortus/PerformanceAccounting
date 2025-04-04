@@ -13,8 +13,17 @@ export default (sequelize, DataTypes) => {
         model: 'Ведомости',
         key: 'ID'
       },
-      allowNull: false,
+      allowNull: true,
       field: 'ID Ведомости'
+    },
+    lessonId: {
+      type: DataTypes.BIGINT,
+      references: {
+        model: 'Занятия',
+        key: 'ID'
+      },
+      allowNull: true,
+      field: 'ID Занятия'
     },
     studentId: {
       type: DataTypes.BIGINT,
@@ -35,7 +44,17 @@ export default (sequelize, DataTypes) => {
     }
   }, {
     tableName: 'Оценки',
-    timestamps: false
+    timestamps: false,
+    validate: {
+      eitherStatementOrLesson() {
+        if (!this.statementId && !this.lessonId) {
+          throw new Error('Оценка должна быть связана либо с ведомостью, либо с занятием');
+        }
+        if (this.statementId && this.lessonId) {
+          throw new Error('Оценка может быть связана только с ведомостью или только с занятием');
+        }
+      }
+    }
   });
 
   return Grade;
