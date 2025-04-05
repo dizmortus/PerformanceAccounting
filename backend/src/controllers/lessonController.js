@@ -21,11 +21,8 @@ export const getLessonsByStatement = async (req, res) => {
             attributes: ["id", "statementId", "date"] // Выбираем только нужные поля
         });
 
-        if (!lessons || lessons.length === 0) {
-            return res.status(404).json({ message: "Занятия не найдены" });
-        }
-
-        res.json(lessons);
+        // Возвращаем пустой массив, если занятия не найдены
+        res.json(lessons || []);
     } catch (error) {
         console.error("Ошибка при получении занятий:", error);
         res.status(500).json({ 

@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { fetchPossibleStatuses, fetchPossibleRoles, createUser, checkUserByLogin } from "../utils/api";
 import ConfirmModal from './ConfirmModal';
 import WarningModal from './WarningModal';
@@ -12,31 +13,60 @@ const CreateUserModal = ({ onClose }) => {
         firstName: "",
         patronymic: "",
         email: "",
-        role: "Преподаватель", // Установлено значение по умолчанию
+        role: "Преподаватель",
         newPassword: "",
         isBlocked: false,
     });
-    const [roles, setRoles] = useState([]);
-    const [statuses, setStatuses] = useState([]);
-    const [isConfirmOpen, setIsConfirmOpen] = useState(false); // Состояние для ConfirmModal
-    const [isWarningOpen, setIsWarningOpen] = useState(false); // Состояние для WarningModal
-    const [warningText, setWarningText] = useState(""); // Текст для WarningModal
-    const [emailError, setEmailError] = useState(""); // Состояние для ошибки email
-    const [validationErrors, setValidationErrors] = useState({}); // Состояние для ошибок валидации
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [isWarningOpen, setIsWarningOpen] = useState(false);
+    const [warningText, setWarningText] = useState("");
+    const [emailError, setEmailError] = useState("");
+    const [validationErrors, setValidationErrors] = useState({});
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const rolesData = await fetchPossibleRoles();
-                const statusesData = await fetchPossibleStatuses();
-                setRoles(rolesData);
-                setStatuses(statusesData);
-            } catch (error) {
-                console.error("Ошибка загрузки данных:", error);
+    // Fetch data with React Query
+    const { data: roles = [] } = useQuery({
+        queryKey: ['userRoles'],
+        queryFn: fetchPossibleRoles,
+        staleTime: 60 * 1000 // 1 minute
+    });
+
+    const { data: statuses = [] } = useQuery({
+        queryKey: ['userStatuses'],
+        queryFn: fetchPossibleStatuses,
+        staleTime: 60 * 1000
+    });
+
+    // Mutation for checking user existence
+    const checkUserMutation = useMutation({
+        mutationFn: checkUserByLogin,
+        onSuccess: (data) => {
+            if (data.exists) {
+                setWarningText("Пользователь с таким логином уже существует!");
+                setIsWarningOpen(true);
+            } else {
+                createUserMutation.mutate({
+                    ...localUser,
+                    password: localUser.newPassword,
+                    status: localUser.isBlocked ? "Заблокированный" : "Активный"
+                });
             }
-        };
-        fetchData();
-    }, []);
+        }
+    });
+
+    // Mutation for creating user
+    const createUserMutation = useMutation({
+        mutationFn: createUser,
+        onSuccess: () => {
+            setWarningText("Пользователь успешно создан!");
+            setIsWarningOpen(true);
+            onClose();
+        },
+        onError: (error) => {
+            console.error("Ошибка при создании пользователя:", error);
+            setWarningText("Ошибка при создании пользователя. Попробуйте снова.");
+            setIsWarningOpen(true);
+        }
+    });
 
     const handleChange = (e, field) => {
         const value = e.target.value;
@@ -45,7 +75,6 @@ const CreateUserModal = ({ onClose }) => {
             [field]: value,
         }));
 
-        // Очистка ошибки валидации при изменении поля
         if (validationErrors[field]) {
             setValidationErrors((prev) => ({
                 ...prev,
@@ -53,7 +82,6 @@ const CreateUserModal = ({ onClose }) => {
             }));
         }
 
-        // Валидация email при изменении
         if (field === "email") {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (!emailRegex.test(value)) {
@@ -72,8 +100,7 @@ const CreateUserModal = ({ onClose }) => {
     };
 
     const handleCreate = async () => {
-        // Проверка, что все обязательные поля заполнены
-        const requiredFields = ["login", "lastName", "firstName", "email", "newPassword"]; // Убрано поле role
+        const requiredFields = ["login", "lastName", "firstName", "email", "newPassword"];
         const errors = {};
 
         requiredFields.forEach((field) => {
@@ -87,39 +114,14 @@ const CreateUserModal = ({ onClose }) => {
             return;
         }
 
-        // Проверка email перед отправкой
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(localUser.email)) {
             setEmailError("Введите корректный email");
-            return; // Остановка выполнения, если email некорректен
-        }
-
-        // Проверка, существует ли пользователь с таким логином
-        const { exists } = await checkUserByLogin(localUser.login);
-        if (exists) {
-            setWarningText("Пользователь с таким логином уже существует!");
-            setIsWarningOpen(true);
             return;
         }
 
-        try {
-            const newUser = {
-                ...localUser,
-                password: localUser.newPassword, // Переименовываем newPassword в password
-                status: localUser.isBlocked ? "Заблокированный" : "Активный",
-            };
-
-            console.log("Данные для создания пользователя:", newUser); // Логируем данные перед отправкой
-
-            await createUser(newUser);
-            setWarningText("Пользователь успешно создан!");
-            setIsWarningOpen(true);
-            onClose();
-        } catch (error) {
-            console.error("Ошибка при создании пользователя:", error);
-            setWarningText("Ошибка при создании пользователя. Попробуйте снова.");
-            setIsWarningOpen(true);
-        }
+        // Start the user creation process by first checking login existence
+        checkUserMutation.mutate(localUser.login);
     };
 
     return (
@@ -132,7 +134,7 @@ const CreateUserModal = ({ onClose }) => {
                             <label className="block text-sm font-medium text-gray-700">Логин</label>
                             <input
                                 type="text"
-                                value={localUser.login || ""}
+                                value={localUser.login}
                                 onChange={(e) => handleChange(e, "login")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.login ? "border-red-500" : ""
@@ -146,7 +148,7 @@ const CreateUserModal = ({ onClose }) => {
                             <label className="block text-sm font-medium text-gray-700">Фамилия</label>
                             <input
                                 type="text"
-                                value={localUser.lastName || ""}
+                                value={localUser.lastName}
                                 onChange={(e) => handleChange(e, "lastName")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.lastName ? "border-red-500" : ""
@@ -160,7 +162,7 @@ const CreateUserModal = ({ onClose }) => {
                             <label className="block text-sm font-medium text-gray-700">Имя</label>
                             <input
                                 type="text"
-                                value={localUser.firstName || ""}
+                                value={localUser.firstName}
                                 onChange={(e) => handleChange(e, "firstName")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.firstName ? "border-red-500" : ""
@@ -174,7 +176,7 @@ const CreateUserModal = ({ onClose }) => {
                             <label className="block text-sm font-medium text-gray-700">Отчество</label>
                             <input
                                 type="text"
-                                value={localUser.patronymic || ""}
+                                value={localUser.patronymic}
                                 onChange={(e) => handleChange(e, "patronymic")}
                                 className="w-full px-2 py-1 border rounded-lg"
                             />
@@ -183,7 +185,7 @@ const CreateUserModal = ({ onClose }) => {
                             <label className="block text-sm font-medium text-gray-700">Email</label>
                             <input
                                 type="email"
-                                value={localUser.email || ""}
+                                value={localUser.email}
                                 onChange={(e) => handleChange(e, "email")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.email || emailError ? "border-red-500" : ""
@@ -198,7 +200,7 @@ const CreateUserModal = ({ onClose }) => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Роль</label>
                             <select
-                                value={localUser.role || ""}
+                                value={localUser.role}
                                 onChange={(e) => handleChange(e, "role")}
                                 className="w-full px-2 py-1 border rounded-lg"
                             >
@@ -210,7 +212,6 @@ const CreateUserModal = ({ onClose }) => {
                             </select>
                         </div>
 
-                        {/* Поле "Пароль" */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Пароль</label>
                             <div className="relative">
@@ -235,7 +236,6 @@ const CreateUserModal = ({ onClose }) => {
                             )}
                         </div>
 
-                        {/* Переключатель блокировки */}
                         <div className="flex items-center justify-between mt-4 bg-gray-100 p-2 rounded-lg">
                             <span className="text-gray-700 font-medium">
                                 {localUser.isBlocked ? "Заблокирован" : "Активен"}
@@ -258,7 +258,6 @@ const CreateUserModal = ({ onClose }) => {
                         </div>
                     </div>
 
-                    {/* Основные кнопки */}
                     <div className="flex justify-end space-x-4 mt-6">
                         <button
                             className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
@@ -269,14 +268,16 @@ const CreateUserModal = ({ onClose }) => {
                         <button
                             className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
                             onClick={handleCreate}
+                            disabled={checkUserMutation.isPending || createUserMutation.isPending}
                         >
-                            Создать
+                            {checkUserMutation.isPending || createUserMutation.isPending 
+                                ? "Создание..." 
+                                : "Создать"}
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* Модальные окна */}
             <ConfirmModal
                 isOpen={isConfirmOpen}
                 onClose={() => setIsConfirmOpen(false)}

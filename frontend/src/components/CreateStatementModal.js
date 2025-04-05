@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { createStatement, fetchAllTeachers, fetchAllDisciplines, fetchAllGroups } from "../utils/api";
 import ConfirmModal from './ConfirmModal';
 import WarningModal from './WarningModal';
@@ -12,15 +13,47 @@ const CreateStatementModal = ({ onClose }) => {
         practiceHours: "",
         semester: "",
         assessmentType: "зачет",
-        date: "" // Поле даты не обязательно
+        date: ""
     });
-    const [teachers, setTeachers] = useState([]);
-    const [disciplines, setDisciplines] = useState([]);
-    const [groups, setGroups] = useState([]);
+    
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [isWarningOpen, setIsWarningOpen] = useState(false);
     const [warningText, setWarningText] = useState("");
     const [validationErrors, setValidationErrors] = useState({});
+
+    // Fetch data using React Query
+    const { data: teachers = [] } = useQuery({
+        queryKey: ['teachers'],
+        queryFn: fetchAllTeachers,
+        staleTime: 60 * 1000 // 1 minute
+    });
+
+    const { data: disciplines = [] } = useQuery({
+        queryKey: ['disciplines'],
+        queryFn: fetchAllDisciplines,
+        staleTime: 60 * 1000
+    });
+
+    const { data: groups = [] } = useQuery({
+        queryKey: ['groups'],
+        queryFn: fetchAllGroups,
+        staleTime: 60 * 1000
+    });
+
+    // Mutation for creating a statement
+    const createStatementMutation = useMutation({
+        mutationFn: createStatement,
+        onSuccess: () => {
+            setWarningText("Ведомость успешно создана!");
+            setIsWarningOpen(true);
+            onClose();
+        },
+        onError: (error) => {
+            console.error("Ошибка при создании ведомости:", error);
+            setWarningText("Ошибка при создании ведомости. Попробуйте снова.");
+            setIsWarningOpen(true);
+        }
+    });
 
     const formatTeacherName = (teacher) => {
         const lastName = teacher.lastName || '';
@@ -28,27 +61,6 @@ const CreateStatementModal = ({ onClose }) => {
         const patronymicInitial = teacher.patronymic ? teacher.patronymic[0] : '';
         return `${lastName} ${firstNameInitial}.${patronymicInitial}.`;
     };
-
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const [teachersData, disciplinesData, groupsData] = await Promise.all([
-                    fetchAllTeachers(),
-                    fetchAllDisciplines(),
-                    fetchAllGroups(),
-                ]);
-                setTeachers(teachersData);
-                setDisciplines(disciplinesData);
-                setGroups(groupsData);
-            } catch (error) {
-                console.error("Ошибка при загрузке данных:", error);
-                setWarningText("Ошибка при загрузке данных. Попробуйте снова.");
-                setIsWarningOpen(true);
-            }
-        };
-
-        loadData();
-    }, []);
 
     const handleChange = (e, field) => {
         const value = e.target.value;
@@ -79,7 +91,6 @@ const CreateStatementModal = ({ onClose }) => {
             errors.semester = "Семестр должен быть числом от 1 до 10";
         }
 
-        // Валидация даты (только если она указана)
         if (localStatement.date && isNaN(new Date(localStatement.date).getTime())) {
             errors.date = "Некорректная дата";
         }
@@ -89,22 +100,12 @@ const CreateStatementModal = ({ onClose }) => {
             return;
         }
 
-        try {
-            // Форматируем данные перед отправкой (дата может быть null)
-            const statementToCreate = {
-                ...localStatement,
-                date: localStatement.date ? new Date(localStatement.date).toISOString() : null
-            };
-            
-            await createStatement(statementToCreate);
-            setWarningText("Ведомость успешно создана!");
-            setIsWarningOpen(true);
-            onClose();
-        } catch (error) {
-            console.error("Ошибка при создании ведомости:", error);
-            setWarningText("Ошибка при создании ведомости. Попробуйте снова.");
-            setIsWarningOpen(true);
-        }
+        const statementToCreate = {
+            ...localStatement,
+            date: localStatement.date ? new Date(localStatement.date).toISOString() : null
+        };
+        
+        createStatementMutation.mutate(statementToCreate);
     };
 
     return (
@@ -113,7 +114,7 @@ const CreateStatementModal = ({ onClose }) => {
                 <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md">
                     <h2 className="text-xl font-semibold mb-4">Создание новой ведомости</h2>
                     <div className="space-y-4">
-                        {/* Выпадающее меню для преподавателя */}
+                        {/* Teacher dropdown */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Преподаватель</label>
                             <select
@@ -135,7 +136,7 @@ const CreateStatementModal = ({ onClose }) => {
                             )}
                         </div>
     
-                        {/* Выпадающее меню для дисциплины */}
+                        {/* Discipline dropdown */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Дисциплина</label>
                             <select
@@ -157,7 +158,7 @@ const CreateStatementModal = ({ onClose }) => {
                             )}
                         </div>
     
-                        {/* Выпадающее меню для группы */}
+                        {/* Group dropdown */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Группа</label>
                             <select
@@ -179,7 +180,7 @@ const CreateStatementModal = ({ onClose }) => {
                             )}
                         </div>
     
-                        {/* Поле для ввода даты */}
+                        {/* Date input */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">
                                 Дата (необязательно)
@@ -197,7 +198,7 @@ const CreateStatementModal = ({ onClose }) => {
                             )}
                         </div>
     
-                        {/* Поле для часов практики с валидацией */}
+                        {/* Practice hours input */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Часы практики</label>
                             <input
@@ -227,7 +228,7 @@ const CreateStatementModal = ({ onClose }) => {
                             )}
                         </div>
     
-                        {/* Остальные поля */}
+                        {/* Semester input */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Семестр</label>
                             <input
@@ -244,6 +245,8 @@ const CreateStatementModal = ({ onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.semester}</p>
                             )}
                         </div>
+
+                        {/* Assessment type dropdown */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Тип аттестации</label>
                             <select
@@ -262,7 +265,7 @@ const CreateStatementModal = ({ onClose }) => {
                         </div>
                     </div>
     
-                    {/* Основные кнопки */}
+                    {/* Action buttons */}
                     <div className="flex justify-end space-x-4 mt-6">
                         <button
                             className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
@@ -273,14 +276,15 @@ const CreateStatementModal = ({ onClose }) => {
                         <button
                             className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
                             onClick={handleCreate}
+                            disabled={createStatementMutation.isPending}
                         >
-                            Создать
+                            {createStatementMutation.isPending ? "Создание..." : "Создать"}
                         </button>
                     </div>
                 </div>
             </div>
     
-            {/* Модальные окна */}
+            {/* Modals */}
             <ConfirmModal
                 isOpen={isConfirmOpen}
                 onClose={() => setIsConfirmOpen(false)}

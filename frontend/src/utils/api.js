@@ -1,4 +1,4 @@
-
+import { QueryClient } from '@tanstack/react-query';
 export const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem("refreshToken");
     if (!refreshToken) return false;
@@ -551,34 +551,63 @@ export const fetchAllGroups = async () => {
  * Выполняет выход пользователя из системы.
  * @param {object} router - Объект роутера Next.js.
  */
-// Выход из системы
+
+
 export const handleLogout = async (router) => {
+    const queryClient = new QueryClient();
+    
     try {
+        // 1. Отменяем все активные запросы
+        queryClient.cancelQueries();
+        
+        // 2. Получаем токен (без ошибки если нет)
         const token = localStorage.getItem("accessToken");
-        if (!token) {
-            throw new Error("Токен отсутствует");
+        
+        // 3. Отправляем запрос на серверный выход (если есть токен)
+        if (token) {
+            try {
+                await fetchWithAuth("/api/auth/logout", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                });
+            } catch (error) {
+                console.warn("Ошибка при серверном выходе:", error);
+                // Продолжаем выполнение даже если серверный выход не удался
+            }
         }
 
-        // Выполняем запрос на выход из системы
-        await fetchWithAuth("/api/auth/logout", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-        });
+        // 4. Очищаем хранилище
+        const itemsToRemove = [
+            "accessToken",
+            "refreshToken",
+            "selectedGroup",
+            "sidebarOpen"
+        ];
+        
+        itemsToRemove.forEach(item => localStorage.removeItem(item));
 
-        // Очищаем локальное хранилище
+        // 5. Перенаправляем (если передан router)
+        if (router) {
+            try {
+                router.push("/login");
+                router.refresh(); // Для Next.js 13+
+            } catch (navigationError) {
+                console.error("Ошибка навигации:", navigationError);
+                // В крайнем случае - перезагрузка страницы
+                if (typeof window !== "undefined") {
+                    window.location.href = "/login";
+                }
+            }
+        }
+
+        // 6. Очищаем кэш запросов
+        queryClient.clear();
+        
+    } catch (error) {
+        console.error("Критическая ошибка при выходе:", error);
+        // Гарантируем очистку даже при ошибке
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
-        localStorage.removeItem("selectedGroup");
-        localStorage.removeItem("sidebarOpen");
-
-        // Перенаправляем на страницу логина
-        if (router) {
-            router.push("/login"); // Используем переданный router для навигации
-        }
-    } catch (error) {
-        console.error("Ошибка при выходе:", error);
         throw error;
     }
 };
@@ -620,12 +649,7 @@ export const createNewLesson = async (lessonData) => {
     }
 };
   
-  /**
-   * Получает занятия по ID ведомости
-   * @param {string|number} statementId - ID ведомости
-   * @returns {Promise<Array>} - Массив занятий
-   */
-  export const fetchLessonsByStatementId = async (statementId) => {
+export const fetchLessonsByStatementId = async (statementId) => {
     try {
       const response = await fetchWithAuth(`/api/statements/${statementId}/lessons`);
       
@@ -639,19 +663,27 @@ export const createNewLesson = async (lessonData) => {
   
       const lessons = await response.json();
       
-      if (!Array.isArray(lessons)) {
-        throw new Error('Некорректный формат данных занятий');
+      // Обрабатываем случай, когда сервер возвращает null/undefined или не массив
+      if (!lessons || !Array.isArray(lessons)) {
+        return [];
       }
   
+      // Если массив пустой, просто возвращаем его
+      if (lessons.length === 0) {
+        return [];
+      }
+  
+      // Преобразуем данные, если массив не пустой
       return lessons.map(lesson => ({
         id: lesson.id,
         statementId: lesson.statementId,
-        date: new Date(lesson.date) // Преобразуем строку в Date объект
+        date: lesson.date ? new Date(lesson.date) : null // Добавил проверку на наличие даты
       }));
   
     } catch (error) {
       console.error(`Ошибка при получении занятий для ведомости ${statementId}:`, error);
-      throw error;
+      // В случае ошибки возвращаем пустой массив, чтобы клиент мог продолжить работу
+      return [];
     }
   };
 

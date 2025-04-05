@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.71.10",
     "bcryptjs": "^3.0.1",
     "framer-motion": "^12.6.3",
     "jsonwebtoken": "^9.0.2",

@@ -1,77 +1,83 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { jwtDecode } from 'jwt-decode';
+import { useQuery, useMutation } from '@tanstack/react-query';
 
 export default function LoginPage() {
     const [login, setLogin] = useState('');
     const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const router = useRouter();
 
-    useEffect(() => {
-        const accessToken = localStorage.getItem('accessToken');
-        const refreshToken = localStorage.getItem('refreshToken');
-        
-        if (!accessToken || !refreshToken) return;
-
-        try {
-            const decodedAccess = jwtDecode(accessToken);
-            const decodedRefresh = jwtDecode(refreshToken);
+    // Проверка авторизации при загрузке
+    const { isError: authCheckError } = useQuery({
+        queryKey: ['authCheck'],
+        queryFn: async () => {
+            const accessToken = localStorage.getItem('accessToken');
+            const refreshToken = localStorage.getItem('refreshToken');
             
-            // Проверяем срок действия refresh-токена
-            const now = Date.now() / 1000;
-            if (decodedRefresh.exp < now) {
+            if (!accessToken || !refreshToken) {
+                return { isAuthenticated: false }; // Явное возвращение значения
+            }
+
+            try {
+                const decodedAccess = jwtDecode(accessToken);
+                const decodedRefresh = jwtDecode(refreshToken);
+                
+                // Проверяем срок действия refresh-токена
+                const now = Date.now() / 1000;
+                if (decodedRefresh.exp < now) {
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    return { isAuthenticated: false }; // Явное возвращение значения
+                }
+
+                // Проверяем статус из токена
+                if (decodedAccess.status === 'Заблокированный') {
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    throw new Error('Ваш аккаунт заблокирован. Обратитесь к администратору.');
+                }
+
+                // Перенаправление по роли
+                if (decodedAccess.role === 'Администратор') {
+                    router.push('/admin');
+                } else if (decodedAccess.role === 'Преподаватель') {
+                    router.push('/teacher');
+                }
+
+                return { isAuthenticated: true }; // Явное возвращение значения
+            } catch (error) {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
-                return;
+                return { isAuthenticated: false }; // Явное возвращение значения
             }
+        },
+        retry: false,
+        staleTime: Infinity
+    });
 
-            // Проверяем статус из токена
-            if (decodedAccess.status === 'Заблокированный') {
-                localStorage.removeItem('accessToken');
-                localStorage.removeItem('refreshToken');
-                setError('Ваш аккаунт заблокирован. Обратитесь к администратору.');
-                return;
-            }
-
-            // Перенаправление по роли
-            if (decodedAccess.role === 'Администратор') {
-                router.push('/admin');
-            } else if (decodedAccess.role === 'Преподаватель') {
-                router.push('/teacher');
-            }
-        } catch (error) {
-            console.error('Ошибка декодирования токена:', error);
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('refreshToken');
-        }
-    }, [router]);
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError('');
-        setIsLoading(true);
-
-        try {
+    // Остальной код остается без изменений...
+    const loginMutation = useMutation({
+        mutationFn: async () => {
             const res = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ login, password })
             });
             
-            const data = await res.json();
-            
             if (!res.ok) {
-                throw new Error(data.error || 'Ошибка входа');
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Ошибка входа');
             }
 
+            return await res.json();
+        },
+        onSuccess: (data) => {
             const decoded = jwtDecode(data.accessToken);
             
-            // Проверка статуса после входа
             if (decoded.status === 'Заблокированный') {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
@@ -81,17 +87,17 @@ export default function LoginPage() {
             localStorage.setItem('accessToken', data.accessToken);
             localStorage.setItem('refreshToken', data.refreshToken);
 
-            // Перенаправление по роли
             if (decoded.role === 'Администратор') {
                 router.push('/admin');
             } else if (decoded.role === 'Преподаватель') {
                 router.push('/teacher');
             }
-        } catch (error) {
-            setError(error.message);
-        } finally {
-            setIsLoading(false);
         }
+    });
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        loginMutation.mutate();
     };
 
     return (
@@ -99,9 +105,9 @@ export default function LoginPage() {
             <div className="bg-white p-10 rounded-lg shadow-lg w-full max-w-lg">
                 <h2 className="text-3xl font-semibold text-center text-gray-900 mb-6">Учет успеваемости студентов</h2>
                 
-                {error && (
+                {(authCheckError || loginMutation.isError) && (
                     <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-                        {error}
+                        {authCheckError?.message || loginMutation.error?.message}
                     </div>
                 )}
                 
@@ -138,9 +144,9 @@ export default function LoginPage() {
                     <button 
                         type="submit" 
                         className="w-full py-3 bg-gradient-to-r from-teal-500 to-blue-500 text-white font-semibold rounded-lg transition-colors duration-300 hover:from-teal-600 hover:to-blue-600 disabled:opacity-50"
-                        disabled={isLoading}
+                        disabled={loginMutation.isPending}
                     >
-                        {isLoading ? 'Вход...' : 'Войти'}
+                        {loginMutation.isPending ? 'Вход...' : 'Войти'}
                     </button>
                 </form>
                 

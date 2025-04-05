@@ -1,17 +1,37 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { fetchAllUsers, fetchPossibleStatuses, fetchPossibleRoles } from "../utils/api";
 import EditUserModal from "./EditUserModal";
 import CreateUserModal from "./CreateUserModal";
 
 const UserTable = ({ onCancel }) => {
-    const [users, setUsers] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
+    // Загрузка данных с использованием React Query
+    const { 
+        data: users = [], 
+        isLoading, 
+        isError, 
+        error,
+        refetch 
+    } = useQuery({
+        queryKey: ['users'],
+        queryFn: fetchAllUsers,
+        staleTime: 5 * 60 * 1000, // 5 минут кэширования
+    });
+
     const [editingUser, setEditingUser] = useState(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [sortColumn, setSortColumn] = useState(null);
     const [sortDirection, setSortDirection] = useState("asc");
+
+    // Мутация для перезагрузки данных
+    const refreshMutation = useMutation({
+        mutationFn: refetch,
+        onSuccess: () => {
+            setEditingUser(null);
+            setIsCreateModalOpen(false);
+        }
+    });
 
     const sortData = (data, column, direction) => {
         if (!column) return data;
@@ -22,32 +42,12 @@ const UserTable = ({ onCancel }) => {
         });
     };
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const usersData = await fetchAllUsers();
-            const sortedUsers = sortData(usersData, sortColumn, sortDirection);
-            setUsers(sortedUsers);
-        } catch (error) {
-            console.error("Ошибка при загрузке данных:", error);
-            setError("Не удалось загрузить данные. Пожалуйста, попробуйте снова.");
-        } finally {
-            setLoading(false);
-        }
-    }, [sortColumn, sortDirection]);
-
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
-
     const handleEditUser = (user) => {
         setEditingUser(user);
     };
 
     const handleCloseModal = () => {
-        setEditingUser(null);
-        loadData();
+        refreshMutation.mutate();
     };
 
     const handleCreateUser = () => {
@@ -55,8 +55,7 @@ const UserTable = ({ onCancel }) => {
     };
 
     const handleCloseCreateModal = () => {
-        setIsCreateModalOpen(false);
-        loadData();
+        refreshMutation.mutate();
     };
 
     const handleSort = (column) => {
@@ -66,10 +65,10 @@ const UserTable = ({ onCancel }) => {
         }
         setSortColumn(column);
         setSortDirection(direction);
-
-        const sortedUsers = sortData(users, column, direction);
-        setUsers(sortedUsers);
     };
+
+    // Сортируем данные только при рендере
+    const sortedUsers = sortData(users, sortColumn, sortDirection);
 
     return (
         <>

@@ -1,42 +1,40 @@
 'use client';
 import { useState } from 'react';
 import { FaUser, FaCog, FaSignOutAlt, FaTimes, FaLock } from 'react-icons/fa';
-import { changePassword } from '../utils/api'; 
+import { useMutation } from '@tanstack/react-query';
+import { changePassword } from '../utils/api';
+
 const UserProfile = ({ login, onLogout }) => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [error, setError] = useState(''); // Добавляем состояние для ошибки
-    const [success, setSuccess] = useState(''); // Добавляем состояние для успешного сообщения
 
-    const handlePasswordChange = async (e) => {
-        e.preventDefault();
-        setError('');
-        setSuccess('');
-
-        // Валидация
-        if (newPassword !== confirmPassword) {
-            setError('Новый пароль и подтверждение не совпадают');
-            return;
-        }
-
-        try {
-            // Используем новый API-метод
-            await changePassword(currentPassword, newPassword);
-            
-            setSuccess('Пароль успешно изменен');
+    // Мутация для изменения пароля с использованием React Query
+    const passwordMutation = useMutation({
+        mutationFn: () => changePassword(currentPassword, newPassword),
+        onSuccess: () => {
+            // Очищаем поля и закрываем модальное окно при успехе
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
-            
-            // Закрываем модальное окно через 2 секунды
             setTimeout(() => setModalOpen(false), 2000);
-        } catch (err) {
-            setError(err.message);
-            console.error('Ошибка:', err);
+        },
+    });
+
+    const handlePasswordChange = async (e) => {
+        e.preventDefault();
+        
+        // Валидация
+        if (newPassword !== confirmPassword) {
+            passwordMutation.reset();
+            passwordMutation.error = new Error('Новый пароль и подтверждение не совпадают');
+            return;
         }
+
+        // Вызываем мутацию
+        await passwordMutation.mutateAsync();
     };
 
     return (
@@ -58,6 +56,7 @@ const UserProfile = ({ login, onLogout }) => {
                             onClick={() => {
                                 setModalOpen(true);
                                 setSettingsOpen(false);
+                                passwordMutation.reset();
                             }}
                         >
                             <FaCog />
@@ -83,25 +82,25 @@ const UserProfile = ({ login, onLogout }) => {
                             <button 
                                 onClick={() => {
                                     setModalOpen(false);
-                                    setError('');
-                                    setSuccess('');
+                                    passwordMutation.reset();
                                 }}
                                 className="text-gray-500 hover:text-gray-700"
+                                disabled={passwordMutation.isPending}
                             >
                                 <FaTimes />
                             </button>
                         </div>
 
                         <div className="p-6">
-                            {error && (
+                            {passwordMutation.isError && (
                                 <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
-                                    {error}
+                                    {passwordMutation.error.message}
                                 </div>
                             )}
                             
-                            {success && (
+                            {passwordMutation.isSuccess && (
                                 <div className="mb-4 p-2 bg-green-100 text-green-700 rounded">
-                                    {success}
+                                    Пароль успешно изменен
                                 </div>
                             )}
 
@@ -116,6 +115,7 @@ const UserProfile = ({ login, onLogout }) => {
                                         value={currentPassword}
                                         onChange={(e) => setCurrentPassword(e.target.value)}
                                         required
+                                        disabled={passwordMutation.isPending}
                                     />
                                 </div>
 
@@ -129,6 +129,7 @@ const UserProfile = ({ login, onLogout }) => {
                                         value={newPassword}
                                         onChange={(e) => setNewPassword(e.target.value)}
                                         required
+                                        disabled={passwordMutation.isPending}
                                     />
                                 </div>
 
@@ -142,22 +143,28 @@ const UserProfile = ({ login, onLogout }) => {
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         required
+                                        disabled={passwordMutation.isPending}
                                     />
                                 </div>
 
                                 <div className="flex justify-end space-x-3">
                                     <button
                                         type="button"
-                                        onClick={() => setModalOpen(false)}
+                                        onClick={() => {
+                                            setModalOpen(false);
+                                            passwordMutation.reset();
+                                        }}
                                         className="px-4 py-2 text-gray-700 border rounded-lg hover:bg-gray-100"
+                                        disabled={passwordMutation.isPending}
                                     >
                                         Отмена
                                     </button>
                                     <button
                                         type="submit"
-                                        className="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition"
+                                        className="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition disabled:opacity-50"
+                                        disabled={passwordMutation.isPending}
                                     >
-                                        Сохранить
+                                        {passwordMutation.isPending ? 'Сохранение...' : 'Сохранить'}
                                     </button>
                                 </div>
                             </form>

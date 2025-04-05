@@ -1,18 +1,56 @@
-import { useEffect, useState, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAllStatements, fetchAllTeachers, fetchAllDisciplines, downloadStatement } from "../utils/api";
 import EditStatementModal from "./EditStatementModal";
 import CreateStatementModal from "./CreateStatementModal";
+import { useState, useCallback } from "react";
 
 const StatementTable = ({ onCancel }) => {
-    const [statements, setStatements] = useState([]);
-    const [teachers, setTeachers] = useState([]);
-    const [disciplines, setDisciplines] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
+    const queryClient = useQueryClient();
     const [editingStatement, setEditingStatement] = useState(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [sortColumn, setSortColumn] = useState(null);
     const [sortDirection, setSortDirection] = useState("asc");
+
+    // Загрузка данных с использованием React Query
+    const { 
+        data: statementsData = [], 
+        isLoading: isStatementsLoading,
+        isError: isStatementsError,
+        error: statementsError,
+        refetch: refetchStatements
+    } = useQuery({
+        queryKey: ['statements'],
+        queryFn: fetchAllStatements,
+        staleTime: 5 * 60 * 1000, // 5 минут кэширования
+    });
+
+    const { 
+        data: teachers = [], 
+        isLoading: isTeachersLoading,
+        isError: isTeachersError
+    } = useQuery({
+        queryKey: ['teachers'],
+        queryFn: fetchAllTeachers,
+        staleTime: 10 * 60 * 1000, // 10 минут кэширования
+    });
+
+    const { 
+        data: disciplines = [], 
+        isLoading: isDisciplinesLoading,
+        isError: isDisciplinesError
+    } = useQuery({
+        queryKey: ['disciplines'],
+        queryFn: fetchAllDisciplines,
+        staleTime: 10 * 60 * 1000, // 10 минут кэширования
+    });
+
+    // Мутация для скачивания файла
+    const downloadMutation = useMutation({
+        mutationFn: downloadStatement,
+        onError: (error) => {
+            console.error("Ошибка при скачивании файла:", error);
+        }
+    });
 
     const getTeacherFullName = (teacherLogin) => {
         const teacher = teachers.find((t) => t.login === teacherLogin);
@@ -43,7 +81,6 @@ const StatementTable = ({ onCancel }) => {
             let valueA = a[column];
             let valueB = b[column];
 
-            // Особый случай для сортировки дат
             if (column === 'date') {
                 valueA = valueA ? new Date(valueA).getTime() : 0;
                 valueB = valueB ? new Date(valueB).getTime() : 0;
@@ -58,40 +95,13 @@ const StatementTable = ({ onCancel }) => {
         });
     };
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const [statementsData, teachersData, disciplinesData] = await Promise.all([
-                fetchAllStatements(),
-                fetchAllTeachers(),
-                fetchAllDisciplines(),
-            ]);
-
-            setTeachers(teachersData);
-            setDisciplines(disciplinesData);
-
-            const sortedStatements = sortData(statementsData, sortColumn, sortDirection);
-            setStatements(sortedStatements);
-        } catch (error) {
-            console.error("Ошибка при загрузке данных:", error);
-            setError("Не удалось загрузить данные. Пожалуйста, попробуйте снова.");
-        } finally {
-            setLoading(false);
-        }
-    }, [sortColumn, sortDirection]);
-
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
-
     const handleEditStatement = (statement) => {
         setEditingStatement(statement);
     };
 
     const handleCloseModal = () => {
         setEditingStatement(null);
-        loadData();
+        queryClient.invalidateQueries(['statements']);
     };
 
     const handleCreateStatement = () => {
@@ -100,7 +110,7 @@ const StatementTable = ({ onCancel }) => {
 
     const handleCloseCreateModal = () => {
         setIsCreateModalOpen(false);
-        loadData();
+        queryClient.invalidateQueries(['statements']);
     };
 
     const handleSort = (column) => {
@@ -110,19 +120,16 @@ const StatementTable = ({ onCancel }) => {
         }
         setSortColumn(column);
         setSortDirection(direction);
-
-        const sortedStatements = sortData(statements, column, direction);
-        setStatements(sortedStatements);
     };
 
-    const handleDownloadFile = async (statementId) => {
-        try {
-            await downloadStatement(statementId);
-        } catch (error) {
-            console.error("Ошибка при скачивании файла:", error);
-            setError("Не удалось скачать файл. Пожалуйста, попробуйте снова.");
-        }
+    const handleDownloadFile = (statementId) => {
+        downloadMutation.mutate(statementId);
     };
+
+    // Сортируем данные
+    const statements = sortData(statementsData, sortColumn, sortDirection);
+    const isLoading = isStatementsLoading || isTeachersLoading || isDisciplinesLoading;
+    const isError = isStatementsError || isTeachersError || isDisciplinesError;
 
     return (
         <>

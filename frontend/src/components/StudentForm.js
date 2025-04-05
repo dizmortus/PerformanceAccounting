@@ -1,5 +1,6 @@
 'use client';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import PracticeForm from './PracticeForm';
 import AttestationForm from './AttestationForm';
 import { fetchStudents, fetchPossibleGrades, downloadStatement } from '../utils/api';
@@ -12,7 +13,7 @@ const StudentForm = ({
     filteredStatements,
     handleCancelSelection
 }) => {
-    // 1. Первым делом объявляем mode, так как он используется в других хуках
+    // 1. State declarations
     const [mode, setMode] = useState(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem('studentFormMode') || 'statement';
@@ -20,7 +21,6 @@ const StudentForm = ({
         return 'statement';
     });
 
-    // 2. Затем объявляем состояния, которые не зависят от других переменных
     const [selectedStatementId, setSelectedStatementId] = useState(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem('selectedStatementId') || "";
@@ -28,8 +28,6 @@ const StudentForm = ({
         return "";
     });
     
-    const [students, setStudents] = useState([]);
-    const [possibleGrades, setPossibleGrades] = useState([]);
     const [filteredGrades, setFilteredGrades] = useState([]);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
@@ -41,7 +39,21 @@ const StudentForm = ({
         shouldDownload: false
     });
 
-    // 3. Затем объявляем вспомогательные функции
+    // 2. React Query hooks
+    const { data: students = [], refetch: refetchStudents } = useQuery({
+        queryKey: ['students', selectedGroup],
+        queryFn: () => fetchStudents(selectedGroup),
+        enabled: !!selectedGroup,
+        select: (data) => data.sort((a, b) => a.lastName.localeCompare(b.lastName))
+    });
+
+    const { data: possibleGrades = {} } = useQuery({
+        queryKey: ['possibleGrades'],
+        queryFn: fetchPossibleGrades,
+        staleTime: Infinity
+    });
+
+    // 3. Helper functions
     const isTodayStatement = useCallback((statement) => {
         const today = new Date();
         const todayLocalDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -64,14 +76,14 @@ const StudentForm = ({
             : filteredStatements.filter(isTodayStatement);
     }, [mode, filteredStatements, isTodayStatement]);
 
-    // 4. Основные эффекты
-    useEffect(() => {
+    // 4. Effects for local storage and derived state
+    React.useEffect(() => {
         if (typeof window !== 'undefined' && selectedStatementId) {
             localStorage.setItem('selectedStatementId', selectedStatementId);
         }
     }, [selectedStatementId]);
 
-    useEffect(() => {
+    React.useEffect(() => {
         const availableStatements = getAvailableStatements();
         
         if (availableStatements.length > 0) {
@@ -87,31 +99,13 @@ const StudentForm = ({
         }
     }, [getAvailableStatements, selectedStatementId]);
 
-    useEffect(() => {
+    React.useEffect(() => {
         if (typeof window !== 'undefined') {
             localStorage.setItem('studentFormMode', mode);
         }
     }, [mode]);
 
-    useEffect(() => {
-        const loadStudents = async () => {
-            const studentsData = await fetchStudents(selectedGroup);
-            const sortedStudents = studentsData.sort((a, b) => 
-                a.lastName.localeCompare(b.lastName)
-            );
-            setStudents(sortedStudents);
-        };
-
-        if (selectedGroup) {
-            loadStudents();
-        }
-    }, [selectedGroup]);
-
-    useEffect(() => {
-        fetchPossibleGrades().then(setPossibleGrades);
-    }, []);
-
-    useEffect(() => {
+    React.useEffect(() => {
         if (selectedStatementId && filteredStatements.length) {
             const selectedStatement = filteredStatements.find(statement => statement.id === selectedStatementId);
             const assessmentType = mode === 'learning' 
@@ -127,7 +121,7 @@ const StudentForm = ({
         }
     }, [selectedStatementId, filteredStatements, possibleGrades, mode]);
 
-    // 5. Обработчики событий
+    // 5. Event handlers
     const handleStatementChange = (e) => {
         const newSelectedStatementId = e.target.value;
         setSelectedStatementId(newSelectedStatementId);
