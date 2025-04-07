@@ -2,15 +2,37 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAllStatements, fetchAllTeachers, fetchAllDisciplines, downloadStatement } from "../utils/api";
 import EditStatementModal from "./EditStatementModal";
 import CreateStatementModal from "./CreateStatementModal";
-import { useState, useCallback } from "react";
+import { useState } from "react";
+import WarningModal from './WarningModal';
 
 const StatementTable = ({ onCancel }) => {
     const queryClient = useQueryClient();
     const [editingStatement, setEditingStatement] = useState(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [sortColumn, setSortColumn] = useState(null);
-    const [sortDirection, setSortDirection] = useState("asc");
 
+    const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
+    const [errorMessage, setErrorMessage] = useState("");
+    const [sortColumn, setSortColumn] = useState(() => {
+        return localStorage.getItem('statements_sortColumn') || null;
+    });
+    
+    const [sortDirection, setSortDirection] = useState(() => {
+        return localStorage.getItem('statements_sortDirection') || 'asc';
+    });
+
+    const handleSort = (column) => {
+        let direction = "asc";
+        if (sortColumn === column) {
+            direction = sortDirection === "asc" ? "desc" : "asc";
+        }
+        
+        // Сохраняем параметры в Local Storage
+        localStorage.setItem('statements_sortColumn', column);
+        localStorage.setItem('statements_sortDirection', direction);
+        
+        setSortColumn(column);
+        setSortDirection(direction);
+    };
     // Загрузка данных с использованием React Query
     const { 
         data: statementsData = [], 
@@ -21,7 +43,7 @@ const StatementTable = ({ onCancel }) => {
     } = useQuery({
         queryKey: ['statements'],
         queryFn: fetchAllStatements,
-        staleTime: 5 * 60 * 1000, // 5 минут кэширования
+        staleTime: 5 * 60 * 1000,
     });
 
     const { 
@@ -31,7 +53,7 @@ const StatementTable = ({ onCancel }) => {
     } = useQuery({
         queryKey: ['teachers'],
         queryFn: fetchAllTeachers,
-        staleTime: 10 * 60 * 1000, // 10 минут кэширования
+        staleTime: 10 * 60 * 1000,
     });
 
     const { 
@@ -41,16 +63,29 @@ const StatementTable = ({ onCancel }) => {
     } = useQuery({
         queryKey: ['disciplines'],
         queryFn: fetchAllDisciplines,
-        staleTime: 10 * 60 * 1000, // 10 минут кэширования
+        staleTime: 10 * 60 * 1000,
     });
 
     // Мутация для скачивания файла
     const downloadMutation = useMutation({
         mutationFn: downloadStatement,
+        useErrorBoundary: false,
         onError: (error) => {
-            console.error("Ошибка при скачивании файла:", error);
-        }
+            // Проверяем флаг silent, чтобы не логировать "тихие" ошибки
+            if (!error.silent && process.env.NODE_ENV === 'development') {
+                console.warn('Download error:', error.message);
+            }
+            setErrorMessage(error.message);
+            setIsErrorModalOpen(true);
+        },
+        // Отключаем стандартное логирование ошибок React Query
+        meta: { suppressErrorLogging: true }
     });
+    
+    const handleDownloadFile = (statementId) => {
+        downloadMutation.mutate(statementId);
+    };
+
 
     const getTeacherFullName = (teacherLogin) => {
         const teacher = teachers.find((t) => t.login === teacherLogin);
@@ -113,21 +148,11 @@ const StatementTable = ({ onCancel }) => {
         queryClient.invalidateQueries(['statements']);
     };
 
-    const handleSort = (column) => {
-        let direction = "asc";
-        if (sortColumn === column) {
-            direction = sortDirection === "asc" ? "desc" : "asc";
-        }
-        setSortColumn(column);
-        setSortDirection(direction);
-    };
 
-    const handleDownloadFile = (statementId) => {
-        downloadMutation.mutate(statementId);
-    };
 
     // Сортируем данные
     const statements = sortData(statementsData, sortColumn, sortDirection);
+    // Обновляем проверку ошибок
     const isLoading = isStatementsLoading || isTeachersLoading || isDisciplinesLoading;
     const isError = isStatementsError || isTeachersError || isDisciplinesError;
 
@@ -334,6 +359,13 @@ const StatementTable = ({ onCancel }) => {
     
             {editingStatement && <EditStatementModal statement={editingStatement} onClose={handleCloseModal} />}
             {isCreateModalOpen && <CreateStatementModal onClose={handleCloseCreateModal} />}
+            {isErrorModalOpen && (
+                <WarningModal 
+                    isOpen={isErrorModalOpen}
+                    onClose={() => setIsErrorModalOpen(false)}
+                    warningText={errorMessage}
+                />
+            )}
         </>
     );
 };

@@ -182,31 +182,29 @@ export const generateStatementDocument = async (statementId) => {
 export const getStatementFile = async (req, res) => {
     try {
         const { statementId } = req.params;
-
-        // Находим ведомость по ID
         const statement = await Statement.findByPk(statementId);
+        
         if (!statement || !statement.list) {
-            return res.status(404).json({ message: "Файл ведомости не найден" });
+            res.status(404).setHeader('Content-Type', 'text/plain');
+            return res.send("Файл ведомости не найден в базе данных");
         }
 
-        // Формируем путь к файлу
-        const filePath = path.join(__dirname, "..", "..", statement.list);  // Путь к файлу из базы данных
-
-        // Проверяем существует ли файл
+        const filePath = path.join(__dirname, "..", "..", statement.list);
+        
         if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ message: "Файл ведомости не найден на сервере" });
+            res.status(404).setHeader('Content-Type', 'text/plain');
+            return res.send("Файл ведомости не найден на сервере");
         }
 
-        // Устанавливаем правильный тип контента для скачивания
+        const safeFilename = `Ведомость_${statementId}.docx`.replace(/[^\w.-]/g, '_');
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        const safeFilename = `Ведомость_${statementId}.docx`.replace(/[^\w.-]/g, '_'); // Заменяем недопустимые символы на "_"
         res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
 
-        // Читаем и отправляем файл
         const file = fs.createReadStream(filePath);
         file.pipe(res);
     } catch (error) {
-        console.error(`[${new Date().toISOString()}] Ошибка при получении файла ведомости:`, error);
-        res.status(500).json({ message: "Ошибка при получении файла ведомости", error: error.message });
+        console.error(`Ошибка при получении файла ведомости:`, error);
+        res.status(500).setHeader('Content-Type', 'text/plain');
+        res.send("Внутренняя ошибка сервера при получении файла");
     }
 };

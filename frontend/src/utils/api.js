@@ -199,26 +199,27 @@ export const deleteGrades = async ({ statementId, lessonId, studentIds }) => {
   };
 // Скачивание ведомости
 export const downloadStatement = async (statementId) => {
-    try {
-        const response = await fetchWithAuth(`/api/statements/${statementId}/file`, {
-            method: "GET",
+    const response = await fetchWithAuth(`/api/statements/${statementId}/file`);
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        // Возвращаем объект ошибки вместо throw
+        return Promise.reject({ 
+            message: errorText || "Файл ведомости не найден",
+            silent: true // Флаг для подавления логов
         });
-
-        if (!response.ok) throw new Error("Ошибка при скачивании ведомости");
-
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `Ведомость_${statementId}.docx`;
-        a.click();
-        window.URL.revokeObjectURL(url);
-    } catch (error) {
-        console.error("Ошибка при скачивании ведомости:", error);
-        throw error;
     }
-};
 
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Ведомость_${statementId}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+};
 // // Отправка оценок
 // export const handleSubmitGrades = async (selectedStatementId, grades) => {
 //     try {

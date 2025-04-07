@@ -19,15 +19,29 @@ const PracticeForm = ({
   const [hasReset, setHasReset] = useState(false);
 
   // Запросы данных с React Query
-  const { data: lessons = [] } = useQuery({
+  const { data: lessons = [], isLoading: isLoadingLessons } = useQuery({
     queryKey: ['lessons', selectedStatementId],
     queryFn: () => fetchLessonsByStatementId(selectedStatementId),
     enabled: !!selectedStatementId,
     staleTime: 5 * 60 * 1000,
+    onSuccess: (data) => {
+      console.log('Загруженные занятия:', data);
+    },
+    onError: (error) => {
+      console.error('Ошибка загрузки занятий:', error);
+    }
   });
 
+  // Вывод в консоль при изменении lessons
+  useEffect(() => {
+    if (lessons && lessons.length > 0) {
+      console.log('Текущие занятия:', lessons);
+      console.log('Даты занятий:', lessons.map(lesson => lesson.date));
+    }
+  }, [lessons]);
+
   const { data: availableDates = [] } = useQuery({
-    queryKey: ['availableDates', selectedStatementId],
+    queryKey: ['availableDates', selectedStatementId, lessons], // Добавляем lessons в ключ запроса
     queryFn: () => {
       const today = new Date().toISOString().split('T')[0];
       const lessonDates = lessons.map(lesson => 
@@ -36,8 +50,9 @@ const PracticeForm = ({
       return Array.from(new Set([today, ...lessonDates]))
         .sort((a, b) => new Date(a) - new Date(b));
     },
-    enabled: !!selectedStatementId,
+    enabled: !!selectedStatementId && !!lessons, // Ждем загрузки lessons
   });
+  
 
   // Мутации для изменения данных
   const createLessonMutation = useMutation({
@@ -61,11 +76,27 @@ const PracticeForm = ({
     }
   });
 
-  // Инициализация состояния
   useEffect(() => {
+    if (!selectedStatementId || !availableDates.length) return;
+  
     const today = new Date().toISOString().split('T')[0];
     const savedDate = localStorage.getItem(`practiceDate_${selectedStatementId}`);
-    setSelectedDate(savedDate || today);
+    
+    // Проверяем, что сохраненная дата есть в availableDates
+    const initialDate = availableDates.includes(savedDate) 
+      ? savedDate 
+      : availableDates.includes(today) 
+        ? today 
+        : availableDates[0] || today;
+    
+    setSelectedDate(initialDate);
+    localStorage.setItem(`practiceDate_${selectedStatementId}`, initialDate);
+  }, [selectedStatementId, availableDates]);
+  
+  // Обработчик изменения даты
+  const handleDateChange = useCallback((date) => {
+    setSelectedDate(date);
+    localStorage.setItem(`practiceDate_${selectedStatementId}`, date);
   }, [selectedStatementId]);
 
   // Загрузка оценок при изменении даты
@@ -276,18 +307,18 @@ const PracticeForm = ({
               Дата занятия:
             </label>
             <select
-              id="lesson-date"
-              className="p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm min-w-[150px] h-[38px]"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              disabled={createLessonMutation.isLoading || submitGradesMutation.isLoading || deleteGradesMutation.isLoading}
-            >
-              {availableDates.map((date) => (
-                <option key={date} value={date}>
-                  {new Date(date).toLocaleDateString('ru-RU')}
-                </option>
-              ))}
-            </select>
+  id="lesson-date"
+  className="p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm min-w-[150px] h-[38px]"
+  value={selectedDate}
+  onChange={(e) => handleDateChange(e.target.value)}
+  disabled={createLessonMutation.isLoading || submitGradesMutation.isLoading || deleteGradesMutation.isLoading}
+>
+  {availableDates.map((date) => (
+    <option key={date} value={date}>
+      {new Date(date).toLocaleDateString('ru-RU')}
+    </option>
+  ))}
+</select>
           </div>
         </div>
         

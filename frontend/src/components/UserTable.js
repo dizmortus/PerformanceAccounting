@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { fetchAllUsers, fetchPossibleStatuses, fetchPossibleRoles } from "../utils/api";
 import EditUserModal from "./EditUserModal";
@@ -21,8 +21,21 @@ const UserTable = ({ onCancel }) => {
 
     const [editingUser, setEditingUser] = useState(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [sortColumn, setSortColumn] = useState(null);
-    const [sortDirection, setSortDirection] = useState("asc");
+    
+    // Инициализация состояния сортировки из Local Storage
+    const [sortColumn, setSortColumn] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('users_sortColumn') || null;
+        }
+        return null;
+    });
+    
+    const [sortDirection, setSortDirection] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('users_sortDirection') || 'asc';
+        }
+        return 'asc';
+    });
 
     // Мутация для перезагрузки данных
     const refreshMutation = useMutation({
@@ -34,10 +47,14 @@ const UserTable = ({ onCancel }) => {
     });
 
     const sortData = (data, column, direction) => {
-        if (!column) return data;
+        if (!column || !data) return data;
+        
         return [...data].sort((a, b) => {
-            if (a[column] < b[column]) return direction === "asc" ? -1 : 1;
-            if (a[column] > b[column]) return direction === "asc" ? 1 : -1;
+            const valueA = a[column]?.toString().toLowerCase() || '';
+            const valueB = b[column]?.toString().toLowerCase() || '';
+            
+            if (valueA < valueB) return direction === "asc" ? -1 : 1;
+            if (valueA > valueB) return direction === "asc" ? 1 : -1;
             return 0;
         });
     };
@@ -60,14 +77,21 @@ const UserTable = ({ onCancel }) => {
 
     const handleSort = (column) => {
         let direction = "asc";
-        if (sortColumn === column && sortDirection === "asc") {
-            direction = "desc";
+        if (sortColumn === column) {
+            direction = sortDirection === "asc" ? "desc" : "asc";
         }
+        
+        // Сохраняем параметры сортировки
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('users_sortColumn', column);
+            localStorage.setItem('users_sortDirection', direction);
+        }
+        
         setSortColumn(column);
         setSortDirection(direction);
     };
 
-    // Сортируем данные только при рендере
+    // Сортируем данные с учетом сохраненных параметров
     const sortedUsers = sortData(users, sortColumn, sortDirection);
 
     return (
@@ -139,7 +163,7 @@ const UserTable = ({ onCancel }) => {
                             </tr>
                         </thead>
                         <tbody>
-                            {users.map((user, index) => (
+                            {sortedUsers.map((user, index)=> (
                                 <tr
                                     key={user.login || `user-${index}`}
                                     className={`${
