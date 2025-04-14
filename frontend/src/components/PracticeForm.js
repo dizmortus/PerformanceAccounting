@@ -1,7 +1,9 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchLessonsByStatementId, createNewLesson, submitGrades, fetchGrades, deleteGrades } from '../utils/api';
+import { useMemo } from 'react';
+import GradesTable from './GradesTable';
 
 const PracticeForm = ({
   selectedStatementId,
@@ -12,11 +14,24 @@ const PracticeForm = ({
   handleCancelSelection
 }) => {
   const queryClient = useQueryClient();
-  const [grades, setGrades] = useState({});
-  const [originalGrades, setOriginalGrades] = useState({});
+  const [gradesMap, setGradesMap] = useState(new Map()); // Map<statementId, grades>
+  const [originalGradesMap, setOriginalGradesMap] = useState(new Map()); // Map<statementId, originalGrades>
+  const [changedGradesMap, setChangedGradesMap] = useState(new Map()); // Map<statementId, changedGrades>
+  const [focusedCellMap, setFocusedCellMap] = useState(new Map()); // Map<statementId, focusedCell>
+  
   const [selectedDate, setSelectedDate] = useState('');
-  const [changedGrades, setChangedGrades] = useState({});
   const [hasReset, setHasReset] = useState(false);
+  const tableRef = useRef(null);
+
+  // Получаем текущие состояния для выбранного statementId
+  const grades = useMemo(() => gradesMap.get(selectedStatementId) || {}, [gradesMap, selectedStatementId]);
+  const originalGrades = useMemo(() => originalGradesMap.get(selectedStatementId) || {}, [originalGradesMap, selectedStatementId]);
+  const changedGrades = useMemo(() => changedGradesMap.get(selectedStatementId) || {}, [changedGradesMap, selectedStatementId]);
+  const focusedCell = useMemo(() => {
+    return focusedCellMap.get(selectedStatementId) || { studentIndex: 0, dateIndex: 0 };
+  }, [focusedCellMap, selectedStatementId]);
+  
+  
 
   // Запросы данных с React Query
   const { data: lessons = [], isLoading: isLoadingLessons } = useQuery({
@@ -24,36 +39,21 @@ const PracticeForm = ({
     queryFn: () => fetchLessonsByStatementId(selectedStatementId),
     enabled: !!selectedStatementId,
     staleTime: 5 * 60 * 1000,
-    onSuccess: (data) => {
-      console.log('Загруженные занятия:', data);
-    },
-    onError: (error) => {
-      console.error('Ошибка загрузки занятий:', error);
-    }
   });
 
-  // Вывод в консоль при изменении lessons
-  useEffect(() => {
-    if (lessons && lessons.length > 0) {
-      console.log('Текущие занятия:', lessons);
-      console.log('Даты занятий:', lessons.map(lesson => lesson.date));
-    }
-  }, [lessons]);
-
-  const { data: availableDates = [] } = useQuery({
-    queryKey: ['availableDates', selectedStatementId, lessons], // Добавляем lessons в ключ запроса
-    queryFn: () => {
-      const today = new Date().toISOString().split('T')[0];
-      const lessonDates = lessons.map(lesson => 
-        new Date(lesson.date).toISOString().split('T')[0]
-      );
-      return Array.from(new Set([today, ...lessonDates]))
-        .sort((a, b) => new Date(a) - new Date(b));
-    },
-    enabled: !!selectedStatementId && !!lessons, // Ждем загрузки lessons
-  });
+  const today = new Date().toLocaleDateString('sv-SE', {
+    timeZone: 'Europe/Minsk'
+  }); // 'sv-SE' даёт формат YYYY-MM-DD
+  console.log('Сегодняшняя дата (Минск):', today);
+  const availableDates = useMemo(() => {
+    const lessonDates = lessons.map(lesson =>
+      new Date(lesson.date).toISOString().split('T')[0]
+    );
   
-
+    const allDates = new Set([...lessonDates, today]);
+    return Array.from(allDates).sort((a, b) => new Date(a) - new Date(b));
+  }, [lessons, today]);
+  
   // Мутации для изменения данных
   const createLessonMutation = useMutation({
     mutationFn: createNewLesson,
@@ -76,274 +76,333 @@ const PracticeForm = ({
     }
   });
 
+  // Загрузка всех оценок
   useEffect(() => {
-    if (!selectedStatementId || !availableDates.length) return;
+    const loadAllGrades = async () => {
+      if (!lessons.length || !students.length) return;
   
-    const today = new Date().toISOString().split('T')[0];
-    const savedDate = localStorage.getItem(`practiceDate_${selectedStatementId}`);
-    
-    // Проверяем, что сохраненная дата есть в availableDates
-    const initialDate = availableDates.includes(savedDate) 
-      ? savedDate 
-      : availableDates.includes(today) 
-        ? today 
-        : availableDates[0] || today;
-    
-    setSelectedDate(initialDate);
-    localStorage.setItem(`practiceDate_${selectedStatementId}`, initialDate);
-  }, [selectedStatementId, availableDates]);
+      // Сначала загружаем данные с сервера
+      const serverGrades = {};
+      const serverOriginalGrades = {};
+      const newChangedGrades = {};
   
-  // Обработчик изменения даты
-  const handleDateChange = useCallback((date) => {
-    setSelectedDate(date);
-    localStorage.setItem(`practiceDate_${selectedStatementId}`, date);
-  }, [selectedStatementId]);
-
-  // Загрузка оценок при изменении даты
-  useEffect(() => {
-    const loadGrades = async () => {
-      if (!selectedDate || !selectedStatementId) return;
-
-      const initialGrades = {};
       students.forEach(student => {
-        initialGrades[student.id] = "";
+        serverGrades[student.id] = {};
+        serverOriginalGrades[student.id] = {};
+        availableDates.forEach(date => {
+          serverGrades[student.id][date] = "";
+          serverOriginalGrades[student.id][date] = "";
+        });
       });
-
-      const existingLesson = lessons.find(lesson => 
-        new Date(lesson.date).toISOString().split('T')[0] === selectedDate
-      );
-
-      let dbGrades = {...initialGrades};
-      
-      if (existingLesson) {
+  
+      for (const lesson of lessons) {
+        const lessonDate = new Date(lesson.date).toISOString().split('T')[0];
         const response = await queryClient.fetchQuery({
-          queryKey: ['grades', existingLesson.id],
+          queryKey: ['grades', lesson.id],
           queryFn: () => fetchGrades({
-            lessonId: existingLesson.id,
+            lessonId: lesson.id,
             studentIds: students.map(s => s.id)
           }),
           staleTime: 0
         });
-        
+  
         if (response?.success && response.grades.length > 0) {
           response.grades.forEach(grade => {
-            dbGrades[grade.studentId] = grade.value;
+            serverGrades[grade.studentId][lessonDate] = grade.value;
+            serverOriginalGrades[grade.studentId][lessonDate] = grade.value;
           });
         }
       }
-
-      setOriginalGrades(dbGrades);
-
-      const savedGrades = localStorage.getItem(`grades_${selectedStatementId}_${selectedDate}`);
-      const savedChanges = localStorage.getItem(`changes_${selectedStatementId}_${selectedDate}`);
-      
-      setGrades(savedGrades ? JSON.parse(savedGrades) : dbGrades);
-      setChangedGrades(savedChanges ? JSON.parse(savedChanges) : {});
-      setHasReset(false);
+  
+      // Затем загружаем из localStorage
+      const savedGrades = loadGradesFromLocalStorage(selectedStatementId) || {};
+  
+      // Объединяем данные и определяем измененные оценки
+      const mergedGrades = {};
+      const mergedOriginalGrades = {};
+  
+      students.forEach(student => {
+        mergedGrades[student.id] = { ...serverGrades[student.id] };
+        mergedOriginalGrades[student.id] = { ...serverOriginalGrades[student.id] };
+  
+        // Если есть сохраненные оценки для этого студента
+        if (savedGrades[student.id]) {
+          availableDates.forEach(date => {
+            // Если оценка была изменена и сохранена локально
+            if (savedGrades[student.id][date] !== undefined && 
+                savedGrades[student.id][date] !== serverOriginalGrades[student.id][date]) {
+              mergedGrades[student.id][date] = savedGrades[student.id][date];
+              
+              // Помечаем как измененную
+              if (!newChangedGrades[student.id]) newChangedGrades[student.id] = {};
+              newChangedGrades[student.id][date] = true;
+            }
+          });
+        }
+      });
+  
+      // Обновляем Map'ы
+      setGradesMap(prev => new Map(prev).set(selectedStatementId, mergedGrades));
+      setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, mergedOriginalGrades));
+      setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, newChangedGrades));
     };
+  
+    loadAllGrades();
+  }, [lessons, students, availableDates, queryClient, selectedStatementId]);
 
-    loadGrades();
-  }, [selectedDate, lessons, selectedStatementId, students, queryClient]);
+  const handleGradeChange = useCallback((studentId, date, value) => {
+    const newGrades = {
+      ...grades,
+      [studentId]: {
+        ...grades[studentId],
+        [date]: value
+      }
+    };
+  
+    // Обновляем gradesMap
+    setGradesMap(prev => new Map(prev).set(selectedStatementId, newGrades));
+    saveGradesToLocalStorage(selectedStatementId, newGrades);
+  
+    setChangedGradesMap(prev => {
+      const currentChangedGrades = prev.get(selectedStatementId) || {};
+      const newChangedGrades = { ...currentChangedGrades };
+      
+      if (originalGrades[studentId]?.[date] !== value) {
+        if (!newChangedGrades[studentId]) newChangedGrades[studentId] = {};
+        newChangedGrades[studentId][date] = true;
+      } else if (newChangedGrades[studentId]?.[date]) {
+        delete newChangedGrades[studentId][date];
+        if (Object.keys(newChangedGrades[studentId]).length === 0) {
+          delete newChangedGrades[studentId];
+        }
+      }
+      
+      return new Map(prev).set(selectedStatementId, newChangedGrades);
+    });
+  }, [grades, originalGrades, selectedStatementId]);
+  
 
-  const handleGradeChange = (studentId, value) => {
-    const newGrades = { ...grades, [studentId]: value };
-    setGrades(newGrades);
-    
-    const newChangedGrades = { ...changedGrades };
-    if (originalGrades[studentId] !== value) {
-      newChangedGrades[studentId] = true;
-    } else {
-      delete newChangedGrades[studentId];
-    }
-    
-    setChangedGrades(newChangedGrades);
-    setHasReset(false);
-    localStorage.setItem(`grades_${selectedStatementId}_${selectedDate}`, JSON.stringify(newGrades));
-    localStorage.setItem(`changes_${selectedStatementId}_${selectedDate}`, JSON.stringify(newChangedGrades));
+  // Функция для сохранения оценок в localStorage
+  const saveGradesToLocalStorage = (statementId, grades) => {
+    localStorage.setItem(`grades_${statementId}`, JSON.stringify(grades));
+  };
+  
+  // Функция для загрузки оценок из localStorage
+  const loadGradesFromLocalStorage = (statementId) => {
+    const savedGrades = localStorage.getItem(`grades_${statementId}`);
+    return savedGrades ? JSON.parse(savedGrades) : null;
   };
 
-  const handleCancel = useCallback(() => {
-    if (Object.keys(changedGrades).length > 0) {
-      setGrades({...originalGrades});
-      setChangedGrades({});
-      setHasReset(true);
-      localStorage.setItem(`grades_${selectedStatementId}_${selectedDate}`, JSON.stringify(originalGrades));
-      localStorage.removeItem(`changes_${selectedStatementId}_${selectedDate}`);
-    } else if (hasReset) {
-      handleCancelSelection();
-    } else {
-      handleCancelSelection();
+  // Обработчик установки оценки через панель
+  const handleSetGrade = useCallback((gradeValue) => {
+    if (students.length === 0 || availableDates.length === 0) return;
+  
+    const { studentIndex, dateIndex } = focusedCell;
+    const studentId = students[studentIndex]?.id;
+    const date = availableDates[dateIndex];
+  
+    if (studentId && date) {
+      handleGradeChange(studentId, date, gradeValue);
     }
-  }, [changedGrades, originalGrades, selectedStatementId, selectedDate, hasReset, handleCancelSelection]);
+  }, [students, availableDates, focusedCell, handleGradeChange]);
+  
+
+  // Обработчик отмены изменений
+  const handleCancel = useCallback(() => {
+    // Обновляем Map'ы
+    setGradesMap(prev => new Map(prev).set(selectedStatementId, originalGrades));
+    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
+    setHasReset(true);
+    
+    // Очищаем сохраненные в localStorage оценки при отмене
+    localStorage.removeItem(`grades_${selectedStatementId}`);
+  }, [originalGrades, selectedStatementId]);
 
   const handleSavePractice = useCallback(() => {
     onOpenConfirm(
       async () => {
         try {
-          let lessonId = null;
-          const existingLesson = lessons.find(lesson => 
-            new Date(lesson.date).toISOString().split('T')[0] === selectedDate
-          );
+          for (const studentId in changedGrades) {
+            for (const date in changedGrades[studentId]) {
+              const lesson = lessons.find(l => 
+                new Date(l.date).toISOString().split('T')[0] === date
+              );
+              
+              let lessonId;
+              if (!lesson) {
+                const result = await createLessonMutation.mutateAsync({
+                  statementId: selectedStatementId,
+                  date: date
+                });
+                
+                if (!result.success || !result.lesson) {
+                  throw new Error(result.error || "Не удалось создать занятие");
+                }
+                
+                lessonId = result.lesson.id;
+              } else {
+                lessonId = lesson.id;
+              }
+  
+              const gradeValue = grades[studentId][date];
+              
+              if (gradeValue && gradeValue !== "") {
+                await submitGradesMutation.mutateAsync({
+                  lessonId,
+                  grades: { [studentId]: gradeValue }
+                });
+              } else {
+                await deleteGradesMutation.mutateAsync({
+                  lessonId,
+                  studentIds: [studentId]
+                });
+              }
+            }
+          }
+  
+          // Обновляем Map'ы после сохранения
+          setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, grades));
+          setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
           
-          if (!existingLesson) {
-            const result = await createLessonMutation.mutateAsync({
-              statementId: selectedStatementId,
-              date: selectedDate
-            });
-            
-            if (!result.success || !result.lesson) {
-              throw new Error(result.error || "Не удалось создать занятие");
-            }
-            
-            lessonId = result.lesson.id;
-          } else {
-            lessonId = existingLesson.id;
-          }
-
-          const gradesToSubmit = {};
-          const gradesToDelete = [];
-
-          students.forEach(student => {
-            const studentId = student.id;
-            const currentGrade = grades[studentId];
-            const originalGrade = originalGrades[studentId];
-
-            if (currentGrade && currentGrade !== "") {
-              gradesToSubmit[studentId] = currentGrade;
-            } else if (originalGrade && originalGrade !== "") {
-              gradesToDelete.push(studentId);
-            }
-          });
-
-          if (gradesToDelete.length > 0) {
-            await deleteGradesMutation.mutateAsync({
-              lessonId,
-              studentIds: gradesToDelete
-            });
-          }
-
-          if (Object.keys(gradesToSubmit).length > 0) {
-            const result = await submitGradesMutation.mutateAsync({
-              lessonId,
-              grades: gradesToSubmit
-            });
-
-            if (!result.success) {
-              throw new Error(result.error || "Ошибка при сохранении оценок");
-            }
-          }
-
-          const newOriginalGrades = { ...grades };
-          setOriginalGrades(newOriginalGrades);
-          setChangedGrades({});
-          setHasReset(false);
-          
-          localStorage.setItem(`grades_${selectedStatementId}_${selectedDate}`, 
-            JSON.stringify(newOriginalGrades));
-          localStorage.removeItem(`changes_${selectedStatementId}_${selectedDate}`);
+          // Очищаем сохраненные в localStorage оценки после успешного сохранения
+          localStorage.removeItem(`grades_${selectedStatementId}`);
           
         } catch (error) {
           console.error("Ошибка сохранения:", error);
           onShowWarning(error.message || "Ошибка при сохранении");
         }
       },
-      "Подтвердите сохранение оценок за занятие",
+      "Подтвердите сохранение всех измененных оценок",
       "",
       false
     );
-  }, [lessons, selectedDate, selectedStatementId, students, grades, originalGrades, 
-      onOpenConfirm, onShowWarning, createLessonMutation, submitGradesMutation, deleteGradesMutation]);
+  }, [changedGrades, grades, lessons, selectedStatementId, 
+      onOpenConfirm, onShowWarning, createLessonMutation, 
+      submitGradesMutation, deleteGradesMutation]);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const key = e.key;
+
+      const isDigit = /^[0-9]$/.test(key);
+      const isAbsent = key === 'н';
+      const isClear = key === 'Backspace' || key === 'Delete';
+
+      // Текущая оценка
+      const { studentIndex, dateIndex } = focusedCell;
+      const studentId = students[studentIndex]?.id;
+      const date = availableDates[dateIndex];
+      const current = studentId && date ? grades[studentId]?.[date] : '';
+
+      if ((isDigit || isAbsent) && filteredGrades.includes(key)) {
+        handleSetGrade(key);
+      }
+
+      if (isClear) {
+        handleSetGrade('');
+      }
+
+      if ((key === '+' || key === '=' || key === 'Add') && filteredGrades.length > 0) {
+          const currentIndex = filteredGrades.indexOf(current);
+          const prevIndex = (currentIndex - 1 + filteredGrades.length) % filteredGrades.length;
+          handleSetGrade(filteredGrades[prevIndex]);
+      }
+
+      if ((key === '-' || key === 'Subtract') && filteredGrades.length > 0) {
+          const currentIndex = filteredGrades.indexOf(current);
+        const nextIndex = (currentIndex + 1) % filteredGrades.length;
+        handleSetGrade(filteredGrades[nextIndex]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [filteredGrades, handleSetGrade, focusedCell, grades, students, availableDates]);
+
+  const handleCellClick = useCallback((studentIndex, dateIndex) => {
+    setFocusedCellMap(prev => new Map(prev).set(selectedStatementId, { studentIndex, dateIndex }));
+  }, [selectedStatementId]);
+      
   const hasChanges = Object.keys(changedGrades).length > 0;
+  const currentStudentId = students[focusedCell.studentIndex]?.id;
+  const currentDate = availableDates[focusedCell.dateIndex];
+  const currentGrade = currentStudentId && currentDate ? grades[currentStudentId]?.[currentDate] : '';
 
   return (
-    <>
-      <div className="flex-1 overflow-y-auto p-4 min-h-0">
-        <ul className="space-y-3">
-          {students.map((student, index) => (
-            <li
-              key={student.id}
-              className={`p-3 border rounded-lg shadow-sm hover:shadow-md transition ${
-                index % 2 === 0 ? 'bg-gray-100' : 'bg-gray-50'
-              } ${
-                changedGrades[student.id] ? 'border-l-4 border-teal-500' : 'border-gray-200'
-              }`}
-            >
-              <div className="flex items-center space-x-4">
-                <div className="flex-shrink-0 w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center text-teal-600 font-semibold">
-                  {index + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">
-                    {student.lastName} {student.firstName} {student.patronymic}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Зачетная книжка №{student.id}
-                  </p>
-                </div>
-                <select
-                  className={`p-2 border ${
-                    changedGrades[student.id] ? 'border-teal-500 bg-teal-50' : 'border-gray-300'
-                  } bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm`}
-                  value={grades[student.id] || ""}
-                  onChange={(e) => handleGradeChange(student.id, e.target.value)}
-                  disabled={createLessonMutation.isLoading || submitGradesMutation.isLoading || deleteGradesMutation.isLoading}
-                >
-                  <option value="">не выбрано</option>
-                  {filteredGrades.map((grade) => (
-                    <option key={grade} value={grade}>{grade}</option>
-                  ))}
-                </select>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
+    <div className="flex-1 overflow-auto" style={{ maxHeight: 'calc(100vh - 10rem)' }}>
+      <div className="flex">
+        <div className="flex-1 overflow-auto">
+        <GradesTable
+  statementId={selectedStatementId}
+  students={students}
+  availableDates={availableDates}
+  grades={grades}
+  changedGrades={changedGrades}
+  focusedCell={focusedCell}
+  tableRef={tableRef}
+  handleCellClick={handleCellClick}
+/>
 
-      <div className="flex justify-between items-center mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200 h-[62px]">
-        <div className="flex-1 min-w-[200px] h-full flex items-center">
-          <div className="flex items-center space-x-2 h-full">
-            <label htmlFor="lesson-date" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-              Дата занятия:
-            </label>
-            <select
-  id="lesson-date"
-  className="p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm min-w-[150px] h-[38px]"
-  value={selectedDate}
-  onChange={(e) => handleDateChange(e.target.value)}
-  disabled={createLessonMutation.isLoading || submitGradesMutation.isLoading || deleteGradesMutation.isLoading}
->
-  {availableDates.map((date) => (
-    <option key={date} value={date}>
-      {new Date(date).toLocaleDateString('ru-RU')}
-    </option>
-  ))}
-</select>
+
+        </div>
+  
+        {/* Панель оценок */}
+        <div className="w-40 flex flex-col border-l border-gray-300 bg-gray-100">
+          <div className="overflow-y-auto p-3" style={{ maxHeight: 'calc(100vh - 10rem - 80px)' }}>
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">Текущая оценка</h3>
+              <div className="p-2  h-[40px]  bg-white rounded border border-gray-300 text-center text-sm font-medium shadow-sm">
+                {currentGrade || '—'}
+              </div>
+            </div>
+            
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">Выставить оценку</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {filteredGrades.map(grade => (
+                  <button
+                    key={grade}
+                    className="w-full h-[40px] flex items-center justify-center bg-blue-500 hover:bg-blue-600 rounded-md text-sm font-medium text-white shadow-md transition-colors leading-none"
+                    onClick={() => handleSetGrade(grade)}
+                  >
+                    {grade === 'н' ? 'Не явился' : grade}
+                  </button>
+                ))}
+                <button
+                  className="col-span-2 w-full h-[40px] rounded-md text-sm font-medium shadow-sm transition-colors flex items-center justify-center bg-gray-400 hover:bg-gray-500 text-white leading-none"
+                  onClick={() => handleSetGrade('')}
+                >
+                  Очистить
+                </button>
+              </div>
+            </div>
+          </div>
+  
+          <div className="p-2 pt-2 bg-gray-100 border-t border-gray-300 mt-auto space-y-2">
+            <button 
+              className={`w-full h-[40px] text-sm font-medium rounded-md transition-colors ${
+                hasChanges ? 'bg-teal-500 hover:bg-teal-600 text-white shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              onClick={handleSavePractice}
+              disabled={!hasChanges}
+            >
+              Сохранить
+            </button>
+            <button 
+              className={`w-full h-[40px] text-sm font-medium rounded-md transition-colors ${
+                hasChanges ? 'bg-gray-500 hover:bg-gray-600 text-white shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              onClick={handleCancel}
+              disabled={!hasChanges}
+            >
+              Отменить
+            </button>
           </div>
         </div>
-        
-        <div className="flex space-x-3 h-full items-center">
-          <button 
-            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow hover:bg-gray-500 transition text-sm h-[38px]"
-            onClick={handleCancel}
-            disabled={createLessonMutation.isLoading || submitGradesMutation.isLoading || deleteGradesMutation.isLoading}
-          >
-            Отменить
-          </button>
-          <button 
-            className={`px-4 py-2 ${
-              hasChanges ? 'bg-teal-500 hover:bg-teal-600' : 'bg-gray-300 cursor-not-allowed'
-            } text-white rounded-lg shadow transition text-sm h-[38px]`}
-            onClick={handleSavePractice}
-            disabled={!hasChanges || createLessonMutation.isLoading || submitGradesMutation.isLoading || deleteGradesMutation.isLoading}
-          >
-            {createLessonMutation.isLoading || submitGradesMutation.isLoading || deleteGradesMutation.isLoading 
-              ? 'Сохранение...' 
-              : 'Сохранить'}
-          </button>
-        </div>
       </div>
-    </>
+    </div>
   );
 };
 

@@ -9,6 +9,7 @@ const EditStatementModal = ({ statement, onClose }) => {
     const [localStatement, setLocalStatement] = useState(statement || {});
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [isWarningOpen, setIsWarningOpen] = useState(false);
+    const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
     const [validationErrors, setValidationErrors] = useState({});
     const [warningText, setWarningText] = useState("");
 
@@ -19,10 +20,14 @@ const EditStatementModal = ({ statement, onClose }) => {
         staleTime: 60 * 1000 // 1 minute
     });
 
-    const { data: disciplines = [] } = useQuery({
+    const { data: disciplinesData = [] } = useQuery({
         queryKey: ['disciplines'],
         queryFn: fetchAllDisciplines,
-        staleTime: 60 * 1000
+        staleTime: 60 * 1000,
+        select: (data) => data.map(d => ({
+            ...d,
+            isPractice: d.isPractice || [1, 2, 3].includes(d.id) // Добавляем флаг практики
+        }))
     });
 
     const { data: groups = [] } = useQuery({
@@ -30,6 +35,7 @@ const EditStatementModal = ({ statement, onClose }) => {
         queryFn: fetchAllGroups,
         staleTime: 60 * 1000
     });
+
 
     // Mutations for update and delete
     const updateStatementMutation = useMutation({
@@ -83,51 +89,81 @@ const EditStatementModal = ({ statement, onClose }) => {
         return date.toISOString().split('T')[0];
     };
 
-    const handleChange = (e, field) => {
-        const value = e.target.value;
-        setLocalStatement((prev) => ({
-            ...prev,
-            [field]: value,
-        }));
+ // Фильтруем дисциплины в зависимости от типа аттестации
+ const filteredDisciplines = localStatement.assessmentType === "практика" 
+ ? disciplinesData.filter(d => d.isPractice)
+ : disciplinesData.filter(d => !d.isPractice);
 
-        if (validationErrors[field]) {
-            setValidationErrors((prev) => ({
-                ...prev,
-                [field]: "",
-            }));
+// ... (остальной код остается без изменений до handleChange)
+
+const handleChange = (e, field) => {
+ const value = e.target.value;
+ const newState = {
+     ...localStatement,
+     [field]: value,
+ };
+
+ // Если изменился тип аттестации, сбрасываем выбранную дисциплину, если она не подходит
+ if (field === "assessmentType") {
+     const selectedDiscipline = disciplinesData.find(d => d.id === newState.disciplineId);
+     if ((value === "практика" && !selectedDiscipline?.isPractice) || 
+         (value !== "практика" && selectedDiscipline?.isPractice)) {
+         newState.disciplineId = "";
+     }
+ }
+
+ setLocalStatement(newState);
+
+ if (validationErrors[field]) {
+     setValidationErrors(prev => ({
+         ...prev,
+         [field]: "",
+     }));
+ }
+};
+
+const handleSave = async (overrideData = null) => {
+    const statementData = overrideData || localStatement;
+
+    const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "date", "creditUnits"];
+    const errors = {};
+
+    requiredFields.forEach((field) => {
+        if (!statementData[field] && statementData[field] !== 0) {
+            errors[field] = "Это поле обязательно для заполнения";
         }
+    });
+
+    if (statementData.semester < 1 || statementData.semester > 10) {
+        errors.semester = "Семестр должен быть числом от 1 до 10";
+    }
+
+    if (statementData.practiceHours <= 0) {
+        errors.practiceHours = "Часы практики должны быть больше 0";
+    }
+
+    if (statementData.creditUnits <= 0) {
+        errors.creditUnits = "Зачетные единицы должны быть больше 0";
+    }
+
+    if (statementData.date && isNaN(new Date(statementData.date).getTime())) {
+        errors.date = "Некорректная дата";
+    }
+
+    if (Object.keys(errors).length > 0) {
+        setValidationErrors(errors);
+        return;
+    }
+
+    const statementToUpdate = {
+        ...statementData,
+        date: statementData.date ? new Date(statementData.date).toISOString() : null,
+        creditUnits: parseInt(statementData.creditUnits)
     };
 
-    const handleSave = async () => {
-        const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "date"];
-        const errors = {};
+    updateStatementMutation.mutate({ id: statementData.id, data: statementToUpdate });
+};
 
-        requiredFields.forEach((field) => {
-            if (!localStatement[field]) {
-                errors[field] = "Это поле обязательно для заполнения";
-            }
-        });
-
-        if (localStatement.semester < 1 || localStatement.semester > 10) {
-            errors.semester = "Семестр должен быть числом от 1 до 10";
-        }
-
-        if (localStatement.date && isNaN(new Date(localStatement.date).getTime())) {
-            errors.date = "Некорректная дата";
-        }
-
-        if (Object.keys(errors).length > 0) {
-            setValidationErrors(errors);
-            return;
-        }
-
-        const statementToUpdate = {
-            ...localStatement,
-            date: localStatement.date ? new Date(localStatement.date).toISOString() : null
-        };
-        
-        updateStatementMutation.mutate({ id: localStatement.id, data: statementToUpdate });
-    };
 
     const handleDelete = async () => {
         deleteStatementMutation.mutate(localStatement.id);
@@ -135,10 +171,27 @@ const EditStatementModal = ({ statement, onClose }) => {
 
     if (!statement) return null;
 
+    const getClearedStatement = () => ({
+        ...statement, 
+        list: null  
+    });
+
+    const handleClearList = () => {
+        setIsClearConfirmOpen(true);
+    };
+
+    const confirmClearList = () => {
+        handleSave(getClearedStatement());
+        setIsClearConfirmOpen(false);
+    };
+
+
+    if (!statement) return null;
+
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg">
                     <h2 className="text-xl font-semibold mb-4">Редактирование ведомости</h2>
                     <div className="space-y-4">
                         {/* Teacher dropdown */}
@@ -165,17 +218,27 @@ const EditStatementModal = ({ statement, onClose }) => {
     
                         {/* Discipline dropdown */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Дисциплина</label>
+                            <label className="block text-sm font-medium text-gray-700">
+                                {localStatement.assessmentType === "практика" ? "Практика" : "Дисциплина"}
+                            </label>
                             <select
                                 value={localStatement.disciplineId || ""}
                                 onChange={(e) => handleChange(e, "disciplineId")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.disciplineId ? "border-red-500" : ""
                                 }`}
+                                disabled={!localStatement.assessmentType}
                             >
-                                <option value="">Выберите дисциплину</option>
-                                {disciplines.map((discipline) => (
-                                    <option key={discipline.id} value={discipline.id}>
+                                <option value="">
+                                    {localStatement.assessmentType === "практика" 
+                                        ? "Выберите практику" 
+                                        : "Выберите дисциплину"}
+                                </option>
+                                {filteredDisciplines.map((discipline) => (
+                                    <option 
+                                        key={discipline.id} 
+                                        value={discipline.id}
+                                    >
                                         {discipline.name}
                                     </option>
                                 ))}
@@ -229,20 +292,7 @@ const EditStatementModal = ({ statement, onClose }) => {
                             <input
                                 type="number"
                                 value={localStatement.practiceHours || ""}
-                                onChange={(e) => {
-                                    const value = parseInt(e.target.value);
-                                    if (value <= 0) {
-                                        setValidationErrors({
-                                            ...validationErrors,
-                                            practiceHours: "Часы практики должны быть больше 0"
-                                        });
-                                    } else {
-                                        const newErrors = {...validationErrors};
-                                        delete newErrors.practiceHours;
-                                        setValidationErrors(newErrors);
-                                        handleChange(e, "practiceHours");
-                                    }
-                                }}
+                                onChange={(e) => handleChange(e, "practiceHours")}
                                 min="1"
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.practiceHours ? "border-red-500" : ""
@@ -270,7 +320,24 @@ const EditStatementModal = ({ statement, onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.semester}</p>
                             )}
                         </div>
-
+    
+                        {/* Credit units input */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
+                            <input
+                                type="number"
+                                value={localStatement.creditUnits || ""}
+                                onChange={(e) => handleChange(e, "creditUnits")}
+                                min="1"
+                                className={`w-full px-2 py-1 border rounded-lg ${
+                                    validationErrors.creditUnits ? "border-red-500" : ""
+                                }`}
+                            />
+                            {validationErrors.creditUnits && (
+                                <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
+                            )}
+                        </div>
+    
                         {/* Assessment type dropdown */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Тип аттестации</label>
@@ -281,8 +348,12 @@ const EditStatementModal = ({ statement, onClose }) => {
                                     validationErrors.assessmentType ? "border-red-500" : ""
                                 }`}
                             >
+                                <option value="">Выберите тип аттестации</option>
                                 <option value="зачет">Зачет</option>
                                 <option value="экзамен">Экзамен</option>
+                                <option value="практика">Практика</option>
+                                <option value="курсовой проект">Курсовой проект</option>
+                                <option value="дифференцированный зачет">Дифференцированный зачет</option>
                             </select>
                             {validationErrors.assessmentType && (
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.assessmentType}</p>
@@ -290,13 +361,14 @@ const EditStatementModal = ({ statement, onClose }) => {
                         </div>
                     </div>
     
-                    {/* Action buttons */}
+      
                     <div className="flex justify-end space-x-4 mt-6">
                         <button
-                            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
-                            onClick={onClose}
+                            className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
+                            onClick={() => handleSave()}
+                            disabled={updateStatementMutation.isPending}
                         >
-                            Отменить
+                            {updateStatementMutation.isPending ? "Сохранение..." : "Принять"}
                         </button>
                         <button
                             className="px-4 py-2 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 transition"
@@ -305,12 +377,20 @@ const EditStatementModal = ({ statement, onClose }) => {
                         >
                             {deleteStatementMutation.isPending ? "Удаление..." : "Удалить"}
                         </button>
+                        {localStatement.list && (
+                            <button
+                                className="px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition"
+                                onClick={handleClearList}
+                                disabled={updateStatementMutation.isPending}
+                            >
+                                Очистить
+                            </button>
+                        )}
                         <button
-                            className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
-                            onClick={handleSave}
-                            disabled={updateStatementMutation.isPending}
+                            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
+                            onClick={onClose}
                         >
-                            {updateStatementMutation.isPending ? "Сохранение..." : "Принять"}
+                            Отменить
                         </button>
                     </div>
                 </div>
@@ -322,6 +402,12 @@ const EditStatementModal = ({ statement, onClose }) => {
                 onClose={() => setIsConfirmOpen(false)}
                 onConfirm={handleDelete}
                 confirmText="Вы действительно хотите удалить ведомость? Это действие необратимо!"
+            />
+            <ConfirmModal
+                isOpen={isClearConfirmOpen}
+                onClose={() => setIsClearConfirmOpen(false)}
+                onConfirm={confirmClearList}
+                confirmText="Вы действительно хотите удалить файл ведомости? Это действие необратимо!"
             />
             <WarningModal
                 isOpen={isWarningOpen}

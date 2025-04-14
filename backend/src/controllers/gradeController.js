@@ -178,19 +178,24 @@ export const setGrade = async (req, res) => {
  */
 export const getPossibleGrades = async (req, res) => {
   try {
+    const numericGrades = Array.from({ length: 11 }, (_, i) => (10 - i).toString());
+
     const gradeOptions = {
       "зачет": ["зачтено", "не зачтено", "не явился", "не допущен"],
-      "экзамен": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "не явился", "не допущен"],
-      "занятие": [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "не явился"]
+      "экзамен": [...numericGrades, "не явился", "не допущен"],
+      "занятие": [...numericGrades, "не явился"],
+      "курсовой проект": [...numericGrades, "не явился"],
+      "практика": [...numericGrades, "не явился"],
+      "дифференцированный зачет": [...numericGrades, "не явился", "не допущен"]
     };
 
-    // Возвращаем весь объект gradeOptions, а не только выбранный тип
     res.status(200).json(gradeOptions);
   } catch (error) {
     console.error("Ошибка при получении возможных оценок:", error);
     res.status(500).json({ error: "Ошибка сервера" });
   }
 };
+
 
 // Серверный обработчик (API)
 export const deleteGrade = async (req, res) => {

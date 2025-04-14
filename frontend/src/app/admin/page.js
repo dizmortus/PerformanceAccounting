@@ -44,7 +44,6 @@ export default function AdminDashboard() {
     const handleCategorySelect = (categoryId) => {
         if (!isAuthenticated) return;
         
-        // Если кликнули на уже выбранную категорию - снимаем выбор
         if (selectedCategory === categoryId) {
             setSelectedCategory(null);
             if (typeof window !== "undefined") {
@@ -84,11 +83,24 @@ export default function AdminDashboard() {
                     </div>
                 ) : (
                     <>
-                        {selectedCategory === 'users' && <UserTable onCancel={handleCancel} />}
-                        {selectedCategory === 'statements' && <StatementTable onCancel={handleCancel} />}
+                        {selectedCategory === 'users' && (
+                            <UserTable 
+                                onCancel={handleCancel} 
+                                currentUserLogin={login} // Передаем логин текущего пользователя
+                            />
+                        )}
+                        {selectedCategory === 'statements' && (
+                            <StatementTable 
+                                onCancel={handleCancel}
+                                currentUserLogin={login} // Передаем логин текущего пользователя
+                            />
+                        )}
                     </>
                 )}
             </main>
+            
+            {/* Пустой div, равный закрытому сайдбару */}
+            <div className="w-16" />
 
             <UserProfile login={login} onLogout={() => handleLogout(router)} />
         </div>

@@ -26,14 +26,13 @@ const StatementTable = ({ onCancel }) => {
             direction = sortDirection === "asc" ? "desc" : "asc";
         }
         
-        // Сохраняем параметры в Local Storage
         localStorage.setItem('statements_sortColumn', column);
         localStorage.setItem('statements_sortDirection', direction);
         
         setSortColumn(column);
         setSortDirection(direction);
     };
-    // Загрузка данных с использованием React Query
+
     const { 
         data: statementsData = [], 
         isLoading: isStatementsLoading,
@@ -66,33 +65,45 @@ const StatementTable = ({ onCancel }) => {
         staleTime: 10 * 60 * 1000,
     });
 
-    // Мутация для скачивания файла
     const downloadMutation = useMutation({
         mutationFn: downloadStatement,
         useErrorBoundary: false,
-        onError: (error) => {
-            // Проверяем флаг silent, чтобы не логировать "тихие" ошибки
+        onError: (error, statementId) => {
             if (!error.silent && process.env.NODE_ENV === 'development') {
                 console.warn('Download error:', error.message);
             }
+            
+            // Если файл не найден, обновляем данные
+            if (error.message.includes("не найден на сервере")) {
+                queryClient.invalidateQueries(['statements']);
+            }
+            
             setErrorMessage(error.message);
             setIsErrorModalOpen(true);
         },
-        // Отключаем стандартное логирование ошибок React Query
+        onSuccess: () => {
+            // Обновляем данные после успешного скачивания
+            queryClient.invalidateQueries(['statements']);
+        },
         meta: { suppressErrorLogging: true }
     });
     
+
     const handleDownloadFile = (statementId) => {
         downloadMutation.mutate(statementId);
     };
 
-
-    const getTeacherFullName = (teacherLogin) => {
+    // Функция для получения полного ФИО преподавателя
+    const getTeacherFullName = (teacherLogin, full = false) => {
         const teacher = teachers.find((t) => t.login === teacherLogin);
         if (!teacher) return "Неизвестный преподаватель";
-        const { lastName, firstName, patronymic } = teacher;
-        const initials = `${firstName ? firstName[0] + ". " : ""}${patronymic ? patronymic[0] + "." : ""}`;
-        return `${lastName} ${initials}`;
+        
+        if (full) {
+            return `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic || ''}`.trim();
+        } else {
+            const initials = `${teacher.firstName ? teacher.firstName[0] + ". " : ""}${teacher.patronymic ? teacher.patronymic[0] + "." : ""}`;
+            return `${teacher.lastName} ${initials}`;
+        }
     };
 
     const getDisciplineName = (disciplineId) => {
@@ -119,6 +130,9 @@ const StatementTable = ({ onCancel }) => {
             if (column === 'date') {
                 valueA = valueA ? new Date(valueA).getTime() : 0;
                 valueB = valueB ? new Date(valueB).getTime() : 0;
+            } else if (column === 'creditUnits') {
+                valueA = valueA || 0;
+                valueB = valueB || 0;
             } else {
                 valueA = valueA || "";
                 valueB = valueB || "";
@@ -148,208 +162,274 @@ const StatementTable = ({ onCancel }) => {
         queryClient.invalidateQueries(['statements']);
     };
 
-
-
-    // Сортируем данные
     const statements = sortData(statementsData, sortColumn, sortDirection);
-    // Обновляем проверку ошибок
     const isLoading = isStatementsLoading || isTeachersLoading || isDisciplinesLoading;
     const isError = isStatementsError || isTeachersError || isDisciplinesError;
 
+    // Function to get column width with extra space for sorting arrow
+// Функция для получения ширины столбца с дополнительным пространством для стрелки сортировки
+const getColumnWidth = (columnName, baseWidth) => {
+    // Столбцы, которым нужно добавить дополнительное пространство
+    const extraWidthColumns = ['teacherLogin', 'semester', 'practiceHours', 'creditUnits'];
+    
+    if (sortColumn === columnName && extraWidthColumns.includes(columnName)) {
+        return `${parseInt(baseWidth) + 11}px`;
+    }
+    return baseWidth;
+};
+   // Новое состояние для модального окна с текстом ячейки
+   const [cellContentModal, setCellContentModal] = useState({
+    isOpen: false,
+    title: "",
+    content: ""
+});
+
+// Обработчик клика по ячейке
+    // Обработчик клика по ячейке
+    const handleCellClick = (title, content, teacherLogin = null) => {
+        if (title === "Преподаватель" && teacherLogin) {
+            const teacher = teachers.find(t => t.login === teacherLogin);
+            if (teacher) {
+                content = `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic || ''}`.trim();
+            }
+        }
+        
+        setCellContentModal({
+            isOpen: true,
+            title,
+            content
+        });
+    };
+
+
     return (
         <>
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-7xl bg-white p-6 rounded-lg shadow-lg flex flex-col" style={{ height: "calc(100vh - 2rem)", resize: "horizontal", overflow: "auto" }}>
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-7xl bg-white p-6 rounded-lg shadow-lg flex flex-col" style={{ height: "calc(100vh - 2rem)", overflow: "hidden" }}>
                 <h2 className="text-2xl font-semibold text-gray-900 text-center mb-4">
                     Список ведомостей
                 </h2>
     
-                <div className="flex-1 overflow-auto mb-4">
-                    <table className="w-full text-sm text-gray-900 border-collapse">
-                        <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
-                            <tr>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer rounded-l-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("id")}
-                                    style={{ minWidth: "50px", width: "1%" }}
-                                >
-                                    ID {sortColumn === "id" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("teacherLogin")}
-                                    style={{ minWidth: "150px", width: "auto" }}
-                                >
-                                    Преподаватель {sortColumn === "teacherLogin" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("disciplineId")}
-                                    style={{ minWidth: "120px", width: "auto" }}
-                                >
-                                    Дисциплина {sortColumn === "disciplineId" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("groupId")}
-                                    style={{ minWidth: "80px", width: "auto" }}
-                                >
-                                    Группа {sortColumn === "groupId" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("date")}
-                                    style={{ minWidth: "100px", width: "auto" }}
-                                >
-                                    Дата {sortColumn === "date" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("practiceHours")}
-                                    style={{ minWidth: "60px", width: "auto" }}
-                                >
-                                    Часы {sortColumn === "practiceHours" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("semester")}
-                                    style={{ minWidth: "80px", width: "auto" }}
-                                >
-                                    Семестр {sortColumn === "semester" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("assessmentType")}
-                                    style={{ minWidth: "80px", width: "auto" }}
-                                >
-                                    Тип {sortColumn === "assessmentType" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("list")}
-                                    style={{ minWidth: "80px", width: "auto" }}
-                                >
-                                    Файл {sortColumn === "list" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-center rounded-r-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    style={{ minWidth: "120px", width: "auto" }}
-                                >
-                                    Действия
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {statements.map((statement, index) => {
-                                const teacherFullName = getTeacherFullName(statement.teacherLogin);
-                                const disciplineName = getDisciplineName(statement.disciplineId);
-                                const formattedDate = formatDate(statement.date);
-    
-                                return (
-                                    <tr
-                                        key={statement.id || `statement-${index}`}
-                                        className={`${
-                                            index % 2 === 0 ? "bg-gray-100" : "bg-gray-200"
-                                        } border-b-0`}
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    <div className="overflow-x-auto flex-1">
+                        <table className="w-full text-sm text-gray-900 border-collapse table-fixed">
+                        <colgroup>
+    <col style={{ width: getColumnWidth('id', '75px') }}/> 
+    <col style={{ width: getColumnWidth('teacherLogin', '110px') }}/>
+    <col style={{ width: getColumnWidth('groupId', '70px') }}/>
+    <col style={{ width: getColumnWidth('semester', '65px') }}/>
+    <col style={{ width: getColumnWidth('disciplineId', '150px') }}/>
+    <col style={{ width: getColumnWidth('practiceHours', '50px') }}/>
+    <col style={{ width: getColumnWidth('creditUnits', '45px') }}/>
+    <col style={{ width: getColumnWidth('date', '75px') }}/>
+    <col style={{ width: getColumnWidth('assessmentType', '80px') }}/>
+    <col style={{ width: getColumnWidth('list', '75px') }}/>
+    <col style={{ width: '85px' }}/>
+</colgroup>
+                            <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
+                                <tr>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer rounded-l-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("id")}
                                     >
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer rounded-l-lg"
-                                            title={statement.id}
-                                            style={{ minWidth: "50px", width: "1%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {statement.id}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                            title={teacherFullName}
-                                            style={{ minWidth: "150px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {teacherFullName}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                            title={disciplineName}
-                                            style={{ minWidth: "120px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {disciplineName}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                            title={statement.groupId}
-                                            style={{ minWidth: "80px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {statement.groupId}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                            title={formattedDate}
-                                            style={{ minWidth: "100px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {formattedDate}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                            title={statement.practiceHours}
-                                            style={{ minWidth: "60px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {statement.practiceHours}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                            title={statement.semester}
-                                            style={{ minWidth: "80px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {statement.semester}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                            title={statement.assessmentType}
-                                            style={{ minWidth: "80px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {statement.assessmentType}
-                                        </td>
-                                        <td
-                                            className="py-3 px-4"
-                                            title={statement.list}
-                                            style={{ minWidth: "80px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                        >
-                                            {statement.list ? (
-                                                <button
-                                                    className="px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition whitespace-nowrap"
-                                                    onClick={() => handleDownloadFile(statement.id)}
-                                                >
-                                                    Скачать
-                                                </button>
-                                            ) : (
-                                                "Нет файла"
-                                            )}
-                                        </td>
-                                        <td 
-                                            className="py-3 px-4 text-center rounded-r-lg"
-                                            style={{ minWidth: "120px", width: "auto" }}
-                                        >
-                                            <button
-                                                className="px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition whitespace-nowrap"
-                                                onClick={() => handleEditStatement(statement)}
-                                            >
-                                                Изменить
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                                        ID {sortColumn === "id" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("teacherLogin")}
+                                    >
+                                        Преподаватель {sortColumn === "teacherLogin" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("groupId")}
+                                    >
+                                        Группа {sortColumn === "groupId" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("semester")}
+                                    >
+                                        Семестр {sortColumn === "semester" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("disciplineId")}
+                                    >
+                                        Дисциплина {sortColumn === "disciplineId" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("practiceHours")}
+                                    >
+                                        Часы {sortColumn === "practiceHours" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("creditUnits")}
+                                    >
+                                        З.Е. {sortColumn === "creditUnits" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("date")}
+                                    >
+                                        Дата {sortColumn === "date" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("assessmentType")}
+                                    >
+                                        Тип {sortColumn === "assessmentType" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("list")}
+                                    >
+                                        Файл {sortColumn === "list" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-center rounded-r-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                    >
+                                        Действия
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {statements.map((statement, index) => {
+    const teacherFullName = getTeacherFullName(statement.teacherLogin);
+    const disciplineName = getDisciplineName(statement.disciplineId);
+    const formattedDate = formatDate(statement.date);
+
+    return (
+        <tr
+            key={statement.id || `statement-${index}`}
+            className={`${index % 2 === 0 ? "bg-gray-100" : "bg-gray-200"} border-b-0`}
+        >
+            {/* ID */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer rounded-l-lg truncate"
+                title={statement.id}
+                onClick={() => handleCellClick("ID", statement.id)}
+            >
+                {statement.id}
+            </td>
+            
+            {/* Преподаватель */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={teacherFullName}
+                onClick={() => handleCellClick("Преподаватель", teacherFullName, statement.teacherLogin)}
+            >
+                {teacherFullName}
+            </td>
+            
+            {/* Группа */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={statement.groupId}
+                onClick={() => handleCellClick("Группа", statement.groupId)}
+            >
+                {statement.groupId}
+            </td>
+            
+            {/* Семестр */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={statement.semester}
+                onClick={() => handleCellClick("Семестр", statement.semester)}
+            >
+                {statement.semester}
+            </td>
+            
+            {/* Дисциплина */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={disciplineName}
+                onClick={() => handleCellClick("Дисциплина", disciplineName)}
+            >
+                {disciplineName}
+            </td>
+            
+            {/* Часы */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={statement.practiceHours}
+                onClick={() => handleCellClick("Часы", statement.practiceHours)}
+            >
+                {statement.practiceHours}
+            </td>
+            
+            {/* З.Е. */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={statement.creditUnits || '-'}
+                onClick={() => handleCellClick("З.Е.", statement.creditUnits || '-')}
+            >
+                {statement.creditUnits || '-'}
+            </td>
+            
+            {/* Дата */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={formattedDate}
+                onClick={() => handleCellClick("Дата", formattedDate)}
+            >
+                {formattedDate}
+            </td>
+            
+            {/* Тип */}
+            <td
+                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                title={statement.assessmentType}
+                onClick={() => handleCellClick("Тип", statement.assessmentType)}
+            >
+                {statement.assessmentType}
+            </td>
+            
+            {/* Файл */}
+            <td
+                className="py-2 px-2 truncate"
+                title={statement.list || 'Нет файла'}
+                onClick={() => statement.list && handleCellClick("Файл", statement.list)}
+            >
+                {statement.list ? (
+                    <button
+                        className="h-[40px] px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition truncate w-full"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadFile(statement.id);
+                        }}
+                    >
+                        Скачать
+                    </button>
+                ) : (
+                    "Нет файла"
+                )}
+            </td>
+            
+            {/* Действия */}
+            <td className="py-2 px-2 text-center rounded-r-lg truncate">
+                <button
+                    className="h-[40px] px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition truncate w-full"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditStatement(statement);
+                    }}
+                >
+                    Изменить
+                </button>
+            </td>
+        </tr>
+    );
+})}
+                </tbody>
+                        </table>
+                    </div>
                 </div>
     
-                <div className="flex justify-end space-x-4">
+                <div className="flex justify-end space-x-4 mt-4">
                     <button
-                        className="px-6 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
-                        onClick={onCancel}
-                    >
-                        Отменить
-                    </button>
-                    <button
-                        className="px-6 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
+                        className="h-[40px] px-6 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
                         onClick={handleCreateStatement}
                     >
                         Создать ведомость
@@ -365,6 +445,23 @@ const StatementTable = ({ onCancel }) => {
                     onClose={() => setIsErrorModalOpen(false)}
                     warningText={errorMessage}
                 />
+            )}
+              {/* Модальное окно для отображения содержимого ячейки */}
+              {cellContentModal.isOpen && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+                    <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-md w-full">
+                        <h2 className="text-xl font-semibold mb-4">{cellContentModal.title}</h2>
+                        <div className="text-gray-700 mb-4 p-4 bg-gray-100 rounded break-words">
+                            {cellContentModal.content}
+                        </div>
+                        <button
+                            onClick={() => setCellContentModal({...cellContentModal, isOpen: false})}
+                            className="w-36 px-6 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
+                        >
+                            ОК
+                        </button>
+                    </div>
+                </div>
             )}
         </>
     );

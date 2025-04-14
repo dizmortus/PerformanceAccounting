@@ -110,7 +110,7 @@ export default function TeacherDashboard() {
                     setSearchOpen={setSearchOpen} 
                 />
             </Sidebar>
-
+    
             <main className="flex-1 bg-opacity-50 relative flex items-center justify-center">
                 {!selectedGroup ? (
                     <div className="text-2xl font-semibold text-white bg-transparent p-6 rounded-lg">
@@ -124,11 +124,15 @@ export default function TeacherDashboard() {
                     />
                 )}
             </main>
-
+    
+            {/* Пустой div, равный закрытому сайдбару */}
+            <div className="w-16" />
+    
             <UserProfile 
                 login={authData.login} 
                 onLogout={logoutMutation.mutate} 
             />
         </div>
     );
+    
 }

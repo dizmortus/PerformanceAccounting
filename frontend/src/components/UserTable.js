@@ -5,7 +5,7 @@ import { fetchAllUsers, fetchPossibleStatuses, fetchPossibleRoles } from "../uti
 import EditUserModal from "./EditUserModal";
 import CreateUserModal from "./CreateUserModal";
 
-const UserTable = ({ onCancel }) => {
+const UserTable = ({ onCancel, currentUserLogin  }) => {
     // Загрузка данных с использованием React Query
     const { 
         data: users = [], 
@@ -93,169 +93,200 @@ const UserTable = ({ onCancel }) => {
 
     // Сортируем данные с учетом сохраненных параметров
     const sortedUsers = sortData(users, sortColumn, sortDirection);
+    const [cellContentModal, setCellContentModal] = useState({
+        isOpen: false,
+        title: "",
+        content: ""
+    });
 
+    // Обработчик клика по ячейке
+    const handleCellClick = (title, content) => {
+        setCellContentModal({
+            isOpen: true,
+            title,
+            content: content || "Нет данных"
+        });
+    };
     return (
         <>
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-7xl bg-white p-6 rounded-lg shadow-lg flex flex-col" style={{ height: "calc(100vh - 2rem)", resize: "horizontal", overflow: "auto" }}>
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-7xl bg-white p-6 rounded-lg shadow-lg flex flex-col" style={{ height: "calc(100vh - 2rem)", overflow: "hidden" }}>
                 <h2 className="text-2xl font-semibold text-gray-900 text-center mb-4">
                     Список пользователей
                 </h2>
     
-                <div className="flex-1 overflow-auto mb-4">
-                    <table className="w-full text-sm text-gray-900 border-collapse">
-                        <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
-                            <tr>
-                                <th 
-                                    className="py-3 px-4 text-left cursor-pointer rounded-l-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("login")}
-                                    style={{ minWidth: "120px", width: "auto" }}
-                                >
-                                    Логин {sortColumn === "login" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("lastName")}
-                                    style={{ minWidth: "120px", width: "auto" }}
-                                >
-                                    Фамилия {sortColumn === "lastName" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("firstName")}
-                                    style={{ minWidth: "100px", width: "auto" }}
-                                >
-                                    Имя {sortColumn === "firstName" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("patronymic")}
-                                    style={{ minWidth: "120px", width: "auto" }}
-                                >
-                                    Отчество {sortColumn === "patronymic" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("email")}
-                                    style={{ minWidth: "180px", width: "auto" }}
-                                >
-                                    Email {sortColumn === "email" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("role")}
-                                    style={{ minWidth: "100px", width: "auto" }}
-                                >
-                                    Роль {sortColumn === "role" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    onClick={() => handleSort("status")}
-                                    style={{ minWidth: "100px", width: "auto" }}
-                                >
-                                    Статус {sortColumn === "status" && (sortDirection === "asc" ? "▲" : "▼")}
-                                </th>
-                                <th 
-                                    className="py-3 px-4 text-center rounded-r-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 whitespace-nowrap"
-                                    style={{ minWidth: "120px", width: "auto" }}
-                                >
-                                    Действия
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sortedUsers.map((user, index)=> (
-                                <tr
-                                    key={user.login || `user-${index}`}
-                                    className={`${
-                                        index % 2 === 0 ? "bg-gray-100" : "bg-gray-200"
-                                    } border-b-0`}
-                                >
-                                    <td
-                                        className="py-3 px-4 hover:bg-gray-50 cursor-pointer rounded-l-lg"
-                                        title={user.login}
-                                        style={{ minWidth: "120px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    <div className="overflow-x-auto flex-1">
+                        <table className="w-full text-sm text-gray-900 border-collapse table-fixed">
+                        <colgroup>{[
+    { width: '100px' }, // Логин
+    { width: '120px' }, // Фамилия
+    { width: '100px' }, // Имя
+    { width: '120px' }, // Отчество
+    { width: '180px' }, // Email
+    { width: '120px' }, // Роль
+    { width: '120px' }, // Статус
+    { width: '100px' }  // Действия
+  ].map((col, i) => (
+    <col key={i} style={{ width: col.width }} />
+  ))}</colgroup>
+                            <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
+                                <tr>
+                                    <th 
+                                        className="py-3 px-4 text-left cursor-pointer rounded-l-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("login")}
                                     >
-                                        {user.login}
-                                    </td>
-                                    <td
-                                        className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                        title={user.lastName}
-                                        style={{ minWidth: "120px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                                        Логин {sortColumn === "login" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("lastName")}
                                     >
-                                        {user.lastName}
-                                    </td>
-                                    <td
-                                        className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                        title={user.firstName}
-                                        style={{ minWidth: "100px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                                        Фамилия {sortColumn === "lastName" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("firstName")}
                                     >
-                                        {user.firstName}
-                                    </td>
-                                    <td
-                                        className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                        title={user.patronymic}
-                                        style={{ minWidth: "120px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                                        Имя {sortColumn === "firstName" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("patronymic")}
                                     >
-                                        {user.patronymic}
-                                    </td>
-                                    <td
-                                        className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                        title={user.email}
-                                        style={{ minWidth: "180px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                                        Отчество {sortColumn === "patronymic" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("email")}
                                     >
-                                        {user.email}
-                                    </td>
-                                    <td
-                                        className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                        title={user.role}
-                                        style={{ minWidth: "100px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                                        Email {sortColumn === "email" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("role")}
                                     >
-                                        {user.role}
-                                    </td>
-                                    <td
-                                        className="py-3 px-4 hover:bg-gray-50 cursor-pointer"
-                                        title={user.status}
-                                        style={{ minWidth: "100px", width: "auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                                        Роль {sortColumn === "role" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
+                                        onClick={() => handleSort("status")}
                                     >
-                                        {user.status}
-                                    </td>
-                                    <td 
-                                        className="py-3 px-4 text-center rounded-r-lg"
-                                        style={{ minWidth: "120px", width: "auto" }}
+                                        Статус {sortColumn === "status" && (sortDirection === "asc" ? "▲" : "▼")}
+                                    </th>
+                                    <th 
+                                        className="py-3 px-4 text-center rounded-r-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
                                     >
-                                        <button
-                                            className="px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition whitespace-nowrap"
-                                            onClick={() => handleEditUser(user)}
-                                        >
-                                            Изменить
-                                        </button>
-                                    </td>
+                                        Действия
+                                    </th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {sortedUsers.map((user, index) => (
+                                    <tr
+                                        key={user.login || `user-${index}`}
+                                        className={`${index % 2 === 0 ? "bg-gray-100" : "bg-gray-200"} border-b-0`}
+                                    >
+                                        <td
+                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer rounded-l-lg truncate"
+                                            title={user.login}
+                                            onClick={() => handleCellClick("Логин", user.login)}
+                                        >
+                                            {user.login}
+                                        </td>
+                                        <td
+                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                            title={user.lastName}
+                                            onClick={() => handleCellClick("Фамилия", user.lastName)}
+                                        >
+                                            {user.lastName}
+                                        </td>
+                                        <td
+                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                            title={user.firstName}
+                                            onClick={() => handleCellClick("Имя", user.firstName)}
+                                        >
+                                            {user.firstName}
+                                        </td>
+                                        <td
+                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                            title={user.patronymic}
+                                            onClick={() => handleCellClick("Отчество", user.patronymic)}
+                                        >
+                                            {user.patronymic}
+                                        </td>
+                                        <td
+                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                            title={user.email}
+                                            onClick={() => handleCellClick("Email", user.email)}
+                                        >
+                                            {user.email}
+                                        </td>
+                                        <td
+                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                            title={user.role}
+                                            onClick={() => handleCellClick("Роль", user.role)}
+                                        >
+                                            {user.role}
+                                        </td>
+                                        <td
+                                            className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                            title={user.status}
+                                            onClick={() => handleCellClick("Статус", user.status)}
+                                        >
+                                            {user.status}
+                                        </td>
+                                        <td 
+                                            className="py-2 px-2 text-center rounded-r-lg truncate"
+                                        >
+                                            <button
+                                                className="h-[40px] px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition truncate w-full"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleEditUser(user);
+                                                }}
+                                            >
+                                                Изменить
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
     
-                <div className="flex justify-end space-x-4">
+                <div className="flex justify-end space-x-4 mt-4">
                     <button
-                        className="px-6 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
-                        onClick={onCancel}
-                    >
-                        Отменить
-                    </button>
-                    <button
-                        className="px-6 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
+                        className="h-[40px] px-6 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
                         onClick={handleCreateUser}
                     >
                         Создать пользователя
                     </button>
                 </div>
             </div>
-    
-            {editingUser && <EditUserModal user={editingUser} onClose={handleCloseModal} />}
+
+            {/* Модальное окно для отображения содержимого ячейки */}
+            {cellContentModal.isOpen && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+                    <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-md w-full">
+                        <h2 className="text-xl font-semibold mb-4">{cellContentModal.title}</h2>
+                        <div className="text-gray-700 mb-4 p-4 bg-gray-100 rounded break-words">
+                            {cellContentModal.content}
+                        </div>
+                        <button
+                            onClick={() => setCellContentModal({...cellContentModal, isOpen: false})}
+                            className="w-36 px-6 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
+                        >
+                            ОК
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {editingUser && <EditUserModal user={editingUser} onClose={handleCloseModal}  currentUserLogin={currentUserLogin} />}
             {isCreateModalOpen && <CreateUserModal onClose={handleCloseCreateModal} />}
         </>
     );
 };
 
-export default UserTable;
+export default UserTable

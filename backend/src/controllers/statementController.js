@@ -2,6 +2,7 @@ import { Statement, Group, Specialty } from "../models/index.js";
 import { sequelize } from "../models/index.js";
 import { Op } from "sequelize";
 import { Lesson, Grade, Student } from "../models/index.js";
+
 /**
  * Получение ведомостей преподавателя
  */
@@ -19,10 +20,11 @@ export const getTeacherStatements = async (req, res) => {
                 "practiceHours",
                 "semester",
                 "assessmentType",
+                "creditUnits",
                 "date",
                 "list"
             ],
-            order: [['date', 'DESC']] // Сортировка по дате (новые сначала)
+            order: [['date', 'DESC']]
         });
 
         res.json(statements);
@@ -39,7 +41,7 @@ export const hasTeacherStatements = async (teacherLogin) => {
     try {
         const statements = await Statement.findOne({
             where: { teacherLogin },
-            attributes: ["id", "date"] // Включаем дату в результат
+            attributes: ["id", "date", "creditUnits"]
         });
 
         return !!statements;
@@ -54,19 +56,44 @@ export const hasTeacherStatements = async (teacherLogin) => {
  */
 export const createStatement = async (req, res) => {
     try {
-        const { teacherLogin, disciplineId, groupId, practiceHours, semester, assessmentType, date, list } = req.body;
+        const { 
+            teacherLogin, 
+            disciplineId, 
+            groupId, 
+            practiceHours, 
+            semester, 
+            assessmentType, 
+            creditUnits,
+            date, 
+            list 
+        } = req.body;
 
         // Проверка обязательных полей
-        if (!teacherLogin || !disciplineId || !groupId || !practiceHours || !semester || !assessmentType || !date) {
+        if (!teacherLogin || !disciplineId || !groupId || !practiceHours || 
+            !semester || !assessmentType || !creditUnits || !date) {
             return res.status(400).json({ 
                 error: "Все обязательные поля должны быть заполнены",
-                required: ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "date"]
+                required: [
+                    "teacherLogin", 
+                    "disciplineId", 
+                    "groupId", 
+                    "practiceHours", 
+                    "semester", 
+                    "assessmentType",
+                    "creditUnits",
+                    "date"
+                ]
             });
         }
 
         // Проверка валидности даты
         if (isNaN(new Date(date).getTime())) {
             return res.status(400).json({ error: "Некорректная дата" });
+        }
+
+        // Проверка зачетных единиц
+        if (creditUnits < 0) {
+            return res.status(400).json({ error: "Количество зачетных единиц не может быть отрицательным" });
         }
 
         // Получение ID специальности и факультета
@@ -113,6 +140,7 @@ export const createStatement = async (req, res) => {
             practiceHours,
             semester,
             assessmentType,
+            creditUnits,
             date: new Date(date),
             list: list || null,
         });
@@ -130,22 +158,41 @@ export const createStatement = async (req, res) => {
 export const updateStatement = async (req, res) => {
     try {
         const { id } = req.params;
-        const { teacherLogin, disciplineId, groupId, practiceHours, semester, assessmentType, date, list } = req.body;
+        const { 
+            teacherLogin, 
+            disciplineId, 
+            groupId, 
+            practiceHours, 
+            semester, 
+            assessmentType, 
+            creditUnits,
+            date, 
+            list 
+        } = req.body;
 
         const statement = await Statement.findByPk(id);
         if (!statement) {
             return res.status(404).json({ error: "Ведомость не найдена" });
         }
 
+        // Проверка зачетных единиц
+        if (creditUnits !== undefined && creditUnits < 0) {
+            return res.status(400).json({ error: "Количество зачетных единиц не может быть отрицательным" });
+        }
+
         // Обновление данных
-        statement.teacherLogin = teacherLogin || statement.teacherLogin;
-        statement.disciplineId = disciplineId || statement.disciplineId;
-        statement.groupId = groupId || statement.groupId;
-        statement.practiceHours = practiceHours || statement.practiceHours;
-        statement.semester = semester || statement.semester;
-        statement.assessmentType = assessmentType || statement.assessmentType;
-        statement.date = date ? new Date(date) : statement.date;
-        statement.list = list || statement.list;
+        statement.teacherLogin = teacherLogin !== undefined ? teacherLogin : statement.teacherLogin;
+        statement.disciplineId = disciplineId !== undefined ? disciplineId : statement.disciplineId;
+        statement.groupId = groupId !== undefined ? groupId : statement.groupId;
+        statement.practiceHours = practiceHours !== undefined ? practiceHours : statement.practiceHours;
+        statement.semester = semester !== undefined ? semester : statement.semester;
+        statement.assessmentType = assessmentType !== undefined ? assessmentType : statement.assessmentType;
+        statement.creditUnits = creditUnits !== undefined ? creditUnits : statement.creditUnits;
+        statement.date = date !== undefined ? new Date(date) : statement.date;
+        if (list !== undefined) {
+            statement.list = list === "[]" ? null : list;
+        }
+        
 
         await statement.save();
 
@@ -175,7 +222,8 @@ export const deleteStatement = async (req, res) => {
             deletedStatement: {
                 id: statement.id,
                 date: statement.date,
-                teacherLogin: statement.teacherLogin
+                teacherLogin: statement.teacherLogin,
+                creditUnits: statement.creditUnits
             }
         });
     } catch (error) {
@@ -198,10 +246,11 @@ export const getAllStatements = async (req, res) => {
                 "practiceHours",
                 "semester",
                 "assessmentType",
+                "creditUnits",
                 "date",
                 "list"
             ],
-            order: [['date', 'DESC']] // Сортировка по дате (новые сначала)
+            order: [['date', 'DESC']]
         });
 
         res.json(statements);
@@ -210,8 +259,6 @@ export const getAllStatements = async (req, res) => {
         res.status(500).json({ error: "Ошибка сервера" });
     }
 };
-
-
 
 /**
  * Рассчитывает среднюю оценку для каждого студента по всем занятиям ведомости

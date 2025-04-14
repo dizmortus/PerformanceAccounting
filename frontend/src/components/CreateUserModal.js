@@ -127,7 +127,7 @@ const CreateUserModal = ({ onClose }) => {
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg">
                     <h2 className="text-xl font-semibold mb-4">Создание нового пользователя</h2>
                     <div className="space-y-4">
                         <div>
@@ -259,12 +259,7 @@ const CreateUserModal = ({ onClose }) => {
                     </div>
 
                     <div className="flex justify-end space-x-4 mt-6">
-                        <button
-                            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
-                            onClick={onClose}
-                        >
-                            Отменить
-                        </button>
+
                         <button
                             className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
                             onClick={handleCreate}
@@ -273,6 +268,12 @@ const CreateUserModal = ({ onClose }) => {
                             {checkUserMutation.isPending || createUserMutation.isPending 
                                 ? "Создание..." 
                                 : "Создать"}
+                        </button>
+                        <button
+                            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
+                            onClick={onClose}
+                        >
+                            Отменить
                         </button>
                     </div>
                 </div>

@@ -1,4 +1,3 @@
-// src/models/statement.js
 export default (sequelize, DataTypes) => {
   const Statement = sequelize.define('Statement', {
     id: {
@@ -54,9 +53,17 @@ export default (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        isIn: [['зачет', 'экзамен']]
+        isIn: [['зачет', 'экзамен', 'практика', 'курсовой проект', 'дифференцированный зачет']]
       },
       field: 'Тип аттестации'
+    },
+    creditUnits: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      validate: {
+        min: 0
+      },
+      field: 'Зачетные единицы'
     },
     date: {
       type: DataTypes.DATE,

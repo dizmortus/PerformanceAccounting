@@ -34,8 +34,19 @@ export const getAllDisciplines = async (req, res) => {
             return res.status(404).json({ error: "Дисциплины не найдены" });
         }
 
-        // Возвращаем список дисциплин
-        res.json(disciplines);
+        // Преобразуем данные, добавляя поле isPractice
+        const disciplinesWithPracticeFlag = disciplines.map(discipline => {
+            // Преобразуем id в число для сравнения
+            const disciplineId = parseInt(discipline.id, 10);
+            return {
+                id: discipline.id,
+                name: discipline.name,
+                isPractice: [1, 2, 3].includes(disciplineId) // true для id 1, 2, 3
+            };
+        });
+
+        // Возвращаем список дисциплин с флагом практики
+        res.json(disciplinesWithPracticeFlag);
     } catch (error) {
         console.error("Ошибка при получении дисциплин:", error);
         res.status(500).json({ error: "Ошибка сервера", details: error.message });

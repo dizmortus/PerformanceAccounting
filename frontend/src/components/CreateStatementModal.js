@@ -8,12 +8,13 @@ import WarningModal from './WarningModal';
 const CreateStatementModal = ({ onClose }) => {
     const [localStatement, setLocalStatement] = useState({
         teacherLogin: "",
-        disciplineId: "",
         groupId: "",
-        practiceHours: "",
         semester: "",
-        assessmentType: "зачет",
-        date: ""
+        disciplineId: "",
+        practiceHours: "",
+        creditUnits: "",
+        date: "",
+        assessmentType: "зачет"
     });
     
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -28,10 +29,14 @@ const CreateStatementModal = ({ onClose }) => {
         staleTime: 60 * 1000 // 1 minute
     });
 
-    const { data: disciplines = [] } = useQuery({
+    const { data: disciplinesData = [] } = useQuery({
         queryKey: ['disciplines'],
         queryFn: fetchAllDisciplines,
-        staleTime: 60 * 1000
+        staleTime: 60 * 1000,
+        select: (data) => data.map(d => ({
+            ...d,
+            isPractice: d.isPractice || [1, 2, 3].includes(d.id) // Добавляем флаг практики
+        }))
     });
 
     const { data: groups = [] } = useQuery({
@@ -39,6 +44,11 @@ const CreateStatementModal = ({ onClose }) => {
         queryFn: fetchAllGroups,
         staleTime: 60 * 1000
     });
+
+    // Фильтруем дисциплины в зависимости от типа аттестации
+    const filteredDisciplines = localStatement.assessmentType === "практика" 
+        ? disciplinesData.filter(d => d.isPractice)
+        : disciplinesData.filter(d => !d.isPractice);
 
     // Mutation for creating a statement
     const createStatementMutation = useMutation({
@@ -64,13 +74,24 @@ const CreateStatementModal = ({ onClose }) => {
 
     const handleChange = (e, field) => {
         const value = e.target.value;
-        setLocalStatement((prev) => ({
-            ...prev,
+        const newState = {
+            ...localStatement,
             [field]: value,
-        }));
+        };
+
+        // Если изменился тип аттестации, сбрасываем выбранную дисциплину, если она не подходит
+        if (field === "assessmentType") {
+            const selectedDiscipline = disciplinesData.find(d => d.id === newState.disciplineId);
+            if ((value === "практика" && !selectedDiscipline?.isPractice) || 
+                (value !== "практика" && selectedDiscipline?.isPractice)) {
+                newState.disciplineId = "";
+            }
+        }
+
+        setLocalStatement(newState);
 
         if (validationErrors[field]) {
-            setValidationErrors((prev) => ({
+            setValidationErrors(prev => ({
                 ...prev,
                 [field]: "",
             }));
@@ -78,17 +99,25 @@ const CreateStatementModal = ({ onClose }) => {
     };
 
     const handleCreate = async () => {
-        const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType"];
+        const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "creditUnits"];
         const errors = {};
 
         requiredFields.forEach((field) => {
-            if (!localStatement[field]) {
+            if (!localStatement[field] && localStatement[field] !== 0) {
                 errors[field] = "Это поле обязательно для заполнения";
             }
         });
 
         if (localStatement.semester < 1 || localStatement.semester > 10) {
             errors.semester = "Семестр должен быть числом от 1 до 10";
+        }
+
+        if (localStatement.practiceHours <= 0) {
+            errors.practiceHours = "Часы практики должны быть больше 0";
+        }
+
+        if (localStatement.creditUnits <= 0) {
+            errors.creditUnits = "Зачетные единицы должны быть больше 0";
         }
 
         if (localStatement.date && isNaN(new Date(localStatement.date).getTime())) {
@@ -102,7 +131,8 @@ const CreateStatementModal = ({ onClose }) => {
 
         const statementToCreate = {
             ...localStatement,
-            date: localStatement.date ? new Date(localStatement.date).toISOString() : null
+            date: localStatement.date ? new Date(localStatement.date).toISOString() : null,
+            creditUnits: parseInt(localStatement.creditUnits)
         };
         
         createStatementMutation.mutate(statementToCreate);
@@ -111,7 +141,7 @@ const CreateStatementModal = ({ onClose }) => {
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg">
                     <h2 className="text-xl font-semibold mb-4">Создание новой ведомости</h2>
                     <div className="space-y-4">
                         {/* Teacher dropdown */}
@@ -138,16 +168,23 @@ const CreateStatementModal = ({ onClose }) => {
     
                         {/* Discipline dropdown */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Дисциплина</label>
+                            <label className="block text-sm font-medium text-gray-700">
+                                {localStatement.assessmentType === "практика" ? "Практика" : "Дисциплина"}
+                            </label>
                             <select
                                 value={localStatement.disciplineId || ""}
                                 onChange={(e) => handleChange(e, "disciplineId")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.disciplineId ? "border-red-500" : ""
                                 }`}
+                                disabled={!localStatement.assessmentType}
                             >
-                                <option value="">Выберите дисциплину</option>
-                                {disciplines.map((discipline) => (
+                                <option value="">
+                                    {localStatement.assessmentType === "практика" 
+                                        ? "Выберите практику" 
+                                        : "Выберите дисциплину"}
+                                </option>
+                                {filteredDisciplines.map((discipline) => (
                                     <option key={discipline.id} value={discipline.id}>
                                         {discipline.name}
                                     </option>
@@ -182,9 +219,7 @@ const CreateStatementModal = ({ onClose }) => {
     
                         {/* Date input */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">
-                                Дата (необязательно)
-                            </label>
+                            <label className="block text-sm font-medium text-gray-700">Дата (необязательно)</label>
                             <input
                                 type="date"
                                 value={localStatement.date || ""}
@@ -204,20 +239,7 @@ const CreateStatementModal = ({ onClose }) => {
                             <input
                                 type="number"
                                 value={localStatement.practiceHours || ""}
-                                onChange={(e) => {
-                                    const value = parseInt(e.target.value);
-                                    if (value <= 0) {
-                                        setValidationErrors({
-                                            ...validationErrors,
-                                            practiceHours: "Часы практики должны быть больше 0"
-                                        });
-                                    } else {
-                                        const newErrors = {...validationErrors};
-                                        delete newErrors.practiceHours;
-                                        setValidationErrors(newErrors);
-                                        handleChange(e, "practiceHours");
-                                    }
-                                }}
+                                onChange={(e) => handleChange(e, "practiceHours")}
                                 min="1"
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.practiceHours ? "border-red-500" : ""
@@ -245,7 +267,24 @@ const CreateStatementModal = ({ onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.semester}</p>
                             )}
                         </div>
-
+    
+                        {/* Credit units input */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
+                            <input
+                                type="number"
+                                value={localStatement.creditUnits || ""}
+                                onChange={(e) => handleChange(e, "creditUnits")}
+                                min="1"
+                                className={`w-full px-2 py-1 border rounded-lg ${
+                                    validationErrors.creditUnits ? "border-red-500" : ""
+                                }`}
+                            />
+                            {validationErrors.creditUnits && (
+                                <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
+                            )}
+                        </div>
+    
                         {/* Assessment type dropdown */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Тип аттестации</label>
@@ -256,8 +295,12 @@ const CreateStatementModal = ({ onClose }) => {
                                     validationErrors.assessmentType ? "border-red-500" : ""
                                 }`}
                             >
+                                <option value="">Выберите тип аттестации</option>
                                 <option value="зачет">Зачет</option>
                                 <option value="экзамен">Экзамен</option>
+                                <option value="практика">Практика</option>
+                                <option value="курсовой проект">Курсовой проект</option>
+                                <option value="дифференцированный зачет">Дифференцированный зачет</option>
                             </select>
                             {validationErrors.assessmentType && (
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.assessmentType}</p>
@@ -267,19 +310,20 @@ const CreateStatementModal = ({ onClose }) => {
     
                     {/* Action buttons */}
                     <div className="flex justify-end space-x-4 mt-6">
-                        <button
-                            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
-                            onClick={onClose}
-                        >
-                            Отменить
-                        </button>
-                        <button
+                    <button
                             className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
                             onClick={handleCreate}
                             disabled={createStatementMutation.isPending}
                         >
                             {createStatementMutation.isPending ? "Создание..." : "Создать"}
                         </button>
+                        <button
+                            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
+                            onClick={onClose}
+                        >
+                            Отменить
+                        </button>
+                        
                     </div>
                 </div>
             </div>
@@ -298,6 +342,7 @@ const CreateStatementModal = ({ onClose }) => {
             />
         </>
     );
+    
 };
 
 export default CreateStatementModal;

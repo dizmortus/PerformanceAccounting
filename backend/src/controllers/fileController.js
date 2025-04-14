@@ -97,6 +97,10 @@ export const generateStatementDocument = async (statementId) => {
             return grade !== "не явился" && grade !== "не допущен";
         });
 
+        // Для зачета заменяем подсчет оценок на прочерки
+        const isCredit = statement.assessmentType === "зачет";
+        const gradePlaceholder = isCredit ? "—" : 0;
+
         // Формируем данные для шаблона
         const statementData = {
             statementNumber: formattedStatementCode,
@@ -110,6 +114,7 @@ export const generateStatementDocument = async (statementId) => {
             groupNumber: statement.group.id,
             disciplineName: statement.discipline.name,
             practiceHours: statement.practiceHours,
+            creditUnits: statement.creditUnits || 0,
             teacherName: `${statement.teacher.lastName} ${statement.teacher.firstName[0]}.` + 
                 (statement.teacher.patronymic ? `${statement.teacher.patronymic[0]}.` : ""),
             examDate: new Date().toLocaleDateString(),
@@ -121,24 +126,24 @@ export const generateStatementDocument = async (statementId) => {
                     studentName: `${student.lastName} ${student.firstName[0]}.` + 
                         (student.patronymic ? `${student.patronymic[0]}.` : ""),
                     studentNumber: student.id,
-                    passMark: statement.assessmentType === "зачет" && 
+                    passMark: isCredit && 
                               ["зачтено", "не зачтено", "не явился", "не допущен"].includes(grade) ? grade : "",
-                    examMark: statement.assessmentType === "экзамен" && 
+                    examMark: !isCredit && 
                               ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "не явился", "не допущен"].includes(grade) ? grade : ""
                 };
             }),
-            presentStudents: presentStudents.length, // Количество присутствующих (без не явившихся и не допущенных)
+            presentStudents: presentStudents.length,
             absentStudents: grades.filter(g => g.value === "не явился" || g.value === "не допущен").length,
-            grade10: grades.filter(g => g.value === "10").length,
-            grade9: grades.filter(g => g.value === "9").length,
-            grade8: grades.filter(g => g.value === "8").length,
-            grade7: grades.filter(g => g.value === "7").length,
-            grade6: grades.filter(g => g.value === "6").length,
-            grade5: grades.filter(g => g.value === "5").length,
-            grade4: grades.filter(g => g.value === "4").length,
-            grade3: grades.filter(g => g.value === "3").length,
-            grade2: grades.filter(g => g.value === "2").length,
-            grade1: grades.filter(g => g.value === "1").length,
+            grade10: isCredit ? "—" : grades.filter(g => g.value === "10").length,
+            grade9: isCredit ? "—" : grades.filter(g => g.value === "9").length,
+            grade8: isCredit ? "—" : grades.filter(g => g.value === "8").length,
+            grade7: isCredit ? "—" : grades.filter(g => g.value === "7").length,
+            grade6: isCredit ? "—" : grades.filter(g => g.value === "6").length,
+            grade5: isCredit ? "—" : grades.filter(g => g.value === "5").length,
+            grade4: isCredit ? "—" : grades.filter(g => g.value === "4").length,
+            grade3: isCredit ? "—" : grades.filter(g => g.value === "3").length,
+            grade2: isCredit ? "—" : grades.filter(g => g.value === "2").length,
+            grade1: isCredit ? "—" : grades.filter(g => g.value === "1").length,
             deanName: `${faculty.deanFirstName[0]}.` + 
                       (faculty.deanPatronymic ? `${faculty.deanPatronymic[0]}. ` : " ") + 
                       `${faculty.deanLastName}`
@@ -178,20 +183,30 @@ export const generateStatementDocument = async (statementId) => {
         throw new Error("Ошибка генерации ведомости");
     }
 };
-
 export const getStatementFile = async (req, res) => {
     try {
         const { statementId } = req.params;
         const statement = await Statement.findByPk(statementId);
         
-        if (!statement || !statement.list) {
+        if (!statement) {
             res.status(404).setHeader('Content-Type', 'text/plain');
-            return res.send("Файл ведомости не найден в базе данных");
+            return res.send("Ведомость не найдена в базе данных");
+        }
+
+        if (!statement.list) {
+            res.status(404).setHeader('Content-Type', 'text/plain');
+            return res.send("Файл ведомости не указан в базе данных");
         }
 
         const filePath = path.join(__dirname, "..", "..", statement.list);
         
         if (!fs.existsSync(filePath)) {
+            // Удаляем путь к файлу из базы данных, так как файл не существует
+            await Statement.update(
+                { list: null },
+                { where: { id: statementId } }
+            );
+            
             res.status(404).setHeader('Content-Type', 'text/plain');
             return res.send("Файл ведомости не найден на сервере");
         }
