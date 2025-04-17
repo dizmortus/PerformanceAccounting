@@ -27,7 +27,9 @@ const sequelize = new Sequelize(
   {
     host: dbConfig.host,
     dialect: dbConfig.dialect,
-    logging: false, // отключаем логирование SQL запросов
+    port: dbConfig.port,
+    logging: false, // явное отключение логгирования
+    benchmark: false // дополнительное отключение метрик
   }
 );
 

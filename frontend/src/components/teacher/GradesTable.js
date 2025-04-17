@@ -2,7 +2,7 @@
 import { useEffect, useCallback } from 'react';
 
 const GradesTable = ({
-  statementId,
+  journalId,
   students,
   availableDates,
   grades,
@@ -27,7 +27,7 @@ const GradesTable = ({
 
   // Восстановление фокуса (без скролла)
   useEffect(() => {
-    const savedPosition = localStorage.getItem(`lastFocusedCell_${statementId}`);
+    const savedPosition = localStorage.getItem(`lastFocusedCell_${journalId}`);
     if (savedPosition) {
       try {
         const { studentIndex, dateIndex } = JSON.parse(savedPosition);
@@ -40,7 +40,7 @@ const GradesTable = ({
         console.error('Failed to parse saved cell position', e);
       }
     }
-  }, [students.length, availableDates.length, handleCellClick, statementId]);
+  }, [students.length, availableDates.length, handleCellClick, journalId]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -82,7 +82,7 @@ const GradesTable = ({
       if (newStudentIndex !== studentIndex || newDateIndex !== dateIndex) {
         handleCellClick(newStudentIndex, newDateIndex);
         scrollToCell(newStudentIndex, newDateIndex);
-        localStorage.setItem(`lastFocusedCell_${statementId}`, JSON.stringify({
+        localStorage.setItem(`lastFocusedCell_${journalId}`, JSON.stringify({
           studentIndex: newStudentIndex,
           dateIndex: newDateIndex
         }));
@@ -91,7 +91,7 @@ const GradesTable = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusedCell, students.length, availableDates.length, handleCellClick, scrollToCell, statementId]);
+  }, [focusedCell, students.length, availableDates.length, handleCellClick, scrollToCell, journalId]);
 
   return (
     <div className="flex-1 overflow-auto" ref={tableRef}>
@@ -166,7 +166,7 @@ const GradesTable = ({
                           hover:bg-gray-100 cursor-pointer border border-gray-200`}
                         onClick={() => {
                           handleCellClick(studentIndex, dateIndex);
-                          localStorage.setItem(`lastFocusedCell_${statementId}`, JSON.stringify({
+                          localStorage.setItem(`lastFocusedCell_${journalId}`, JSON.stringify({
                             studentIndex,
                             dateIndex
                           }));

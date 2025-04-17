@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { submitGrades, generateStatement, fetchAverageGrades, fetchMissedLessonsCount } from '../utils/api';
+import { submitGrades, generateStatement, fetchAverageGrades, fetchMissedLessonsCount } from '../../utils/api';
 
 const AttestationForm = ({
   selectedStatementId,
@@ -329,6 +329,7 @@ const AttestationForm = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentFocusedIndex, students, currentGrades, filteredGrades, handleGradeChange]);
+
 
   return (
     <div className="flex h-full" style={{ height: 'calc(100vh - 10rem)' }}>

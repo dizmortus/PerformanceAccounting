@@ -112,43 +112,46 @@ export default function LoginPage() {
                 )}
                 
                 <form onSubmit={handleSubmit} className="space-y-5">
-                    <div>
-                        <input
-                            type="text"
-                            placeholder="Логин"
-                            value={login}
-                            onChange={(e) => setLogin(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                            required
-                        />
-                    </div>
-                    <div>
-                        <div className="relative">
-                            <input
-                                type={showPassword ? "text" : "password"}
-                                placeholder="Пароль"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500 pr-10"
-                                required
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute inset-y-0 right-2 flex items-center text-gray-600"
-                            >
-                                {showPassword ? "👁" : "👁‍🗨"}
-                            </button>
-                        </div>
-                    </div>
-                    <button 
-                        type="submit" 
-                        className="w-full py-3 bg-gradient-to-r from-teal-500 to-blue-500 text-white font-semibold rounded-lg transition-colors duration-300 hover:from-teal-600 hover:to-blue-600 disabled:opacity-50"
-                        disabled={loginMutation.isPending}
-                    >
-                        {loginMutation.isPending ? 'Вход...' : 'Войти'}
-                    </button>
-                </form>
+    <div>
+        <input
+            type="text"
+            placeholder="Логин"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            required
+            autoComplete="username" // Added autocomplete for login
+        />
+    </div>
+    <div>
+        <div className="relative">
+            <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Пароль"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500 pr-10"
+                required
+                autoComplete="current-password" // Added autocomplete for password
+            />
+            <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-2 flex items-center text-gray-600"
+            >
+                {showPassword ? "👁" : "👁‍🗨"}
+            </button>
+        </div>
+    </div>
+    <button 
+        type="submit" 
+        className="w-full py-3 bg-gradient-to-r from-teal-500 to-blue-500 text-white font-semibold rounded-lg transition-colors duration-300 hover:from-teal-600 hover:to-blue-600 disabled:opacity-50"
+        disabled={loginMutation.isPending}
+    >
+        {loginMutation.isPending ? 'Вход...' : 'Войти'}
+    </button>
+</form>
+
                 
                 <div className="mt-6 text-center text-gray-600 text-sm">
                     <p>Если у вас нет аккаунта, обратитесь к администратору системы для получения доступа.</p>

@@ -6,11 +6,11 @@ import {
     fetchTeacherInfo,
     handleLogout
 } from '../../utils/api';
-import SidebarAdminContent from '../../components/SidebarAdminContent';
+import SidebarAdminContent from '../../components/admin/SidebarAdminContent';
 import Sidebar from '../../components/Sidebar';
 import UserProfile from '../../components/UserProfile';
-import UserTable from '../../components/UserTable';
-import StatementTable from '../../components/StatementTable';
+import UserTable from '../../components/admin/UserTable';
+import StatementTable from '../../components/admin/StatementTable';
 import { checkAuth } from '../../utils/auth';
 
 export default function AdminDashboard() {

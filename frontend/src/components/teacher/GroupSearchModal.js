@@ -1,24 +1,23 @@
-'use client';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FaSearch, FaUsers, FaChevronRight, FaTimes } from 'react-icons/fa';
-import { fetchStudents, fetchDisciplineName } from '../utils/api';
+import { fetchStudents, fetchDisciplineName, getTeacherDisciplines } from '../../utils/api'; // добавляем getTeacherDisciplines
 
-const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, statements, groups }) => {
+const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, groups }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    
+
     // Загрузка студентов для всех групп с использованием React Query
     const { data: allStudents = [], isLoading: isLoadingStudents } = useQuery({
         queryKey: ['allStudents', groups?.map(g => g.id)],
         queryFn: async () => {
             if (!groups?.length) return [];
             const studentsData = await Promise.all(
-                groups.map(group => 
+                groups.map(group =>
                     group?.id ? fetchStudents(group.id) : Promise.resolve([])
                 )
             );
-            
-            return groups.flatMap((group, index) => 
+
+            return groups.flatMap((group, index) =>
                 studentsData[index].map(student => ({
                     ...student,
                     groupId: group.id
@@ -29,39 +28,35 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
         staleTime: 5 * 60 * 1000,
     });
 
+    // Загрузка дисциплин для каждой группы
     const { data: disciplinesMap = {} } = useQuery({
-        queryKey: ['disciplinesMap', statements],
+        queryKey: ['disciplinesMap', groups?.map(g => g.id)],
         queryFn: async () => {
-            const uniqueDisciplineIds = [...new Set(
-                statements?.map(s => s.disciplineId).filter(Boolean) || []
-            )];
-            
+            if (!groups?.length) return {};
             const disciplinesData = await Promise.all(
-                uniqueDisciplineIds.map(id => fetchDisciplineName(id))
+                groups.map(group => getTeacherDisciplines('teacherLogin', group.id)) // Поменять на реальный логин преподавателя
             );
-            
-            return disciplinesData.reduce((acc, discipline) => {
-                if (discipline?.id && discipline.name) {
-                    acc[discipline.id] = discipline.name;
-                }
+
+            return groups.reduce((acc, group, index) => {
+                acc[group.id] = disciplinesData[index] || [];
                 return acc;
             }, {});
         },
-        enabled: isOpen && !!statements?.length,
+        enabled: isOpen && !!groups?.length,
         staleTime: Infinity,
     });
-    
+
     // Мемоизированные результаты поиска
     const searchResults = useMemo(() => {
         if (!isOpen || !searchTerm.trim()) return groups || [];
-        
+
         const term = searchTerm.toLowerCase();
-        
+
         // 1. Поиск по номеру группы
-        const groupMatches = (groups || []).filter(group => 
+        const groupMatches = (groups || []).filter(group =>
             group?.id?.toLowerCase()?.includes(term)
         );
-        
+
         // 2. Поиск по имени студента
         const studentMatches = allStudents.filter(student => {
             const searchWords = term.split(/\s+/).filter(word => word.length > 0);
@@ -72,49 +67,51 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
             ].join(' ').toLowerCase();
             return searchWords.every(word => studentData.includes(word));
         });
-        
+
         // 3. Находим группы для найденных студентов
         const studentGroupIds = [...new Set(
             studentMatches.map(student => student.groupId)
         )];
-        
+
         // 4. Поиск по дисциплинам
         const disciplineGroupIds = [...new Set(
-            (statements || [])
-                .filter(statement => {
-                    const disciplineName = disciplinesMap[statement.disciplineId] || '';
-                    return disciplineName.toLowerCase().includes(term);
+            (groups || [])
+                .filter(group => {
+                    const groupDisciplines = disciplinesMap[group.id] || [];
+                    return groupDisciplines.some(discipline => 
+                        discipline.toLowerCase().includes(term)
+                    );
                 })
-                .map(statement => statement.groupId)
+                .map(group => group.id)
                 .filter(Boolean)
         )];
-        
+
         // Объединяем все совпадения и удаляем дубликаты
         return [
             ...groupMatches,
-            ...(groups || []).filter(group => 
+            ...(groups || []).filter(group =>
                 group?.id && studentGroupIds.includes(group.id)
             ),
-            ...(groups || []).filter(group => 
+            ...(groups || []).filter(group =>
                 group?.id && disciplineGroupIds.includes(group.id)
             )
-        ].filter((group, index, self) => 
+        ].filter((group, index, self) =>
             index === self.findIndex(g => g.id === group.id)
         );
-    }, [searchTerm, groups, allStudents, statements, disciplinesMap, isOpen]);
+    }, [searchTerm, groups, allStudents, disciplinesMap, isOpen]);
 
     // Мемоизированная информация о совпадениях
     const getMatchInfo = useCallback((group) => {
         if (!group?.id) return { type: 'unknown', text: '' };
-        
+
         const term = searchTerm.toLowerCase();
         const groupStudents = allStudents.filter(s => s.groupId === group.id);
-        
+
         // Проверка совпадения по номеру группы
         if (group.id.toLowerCase().includes(term)) {
             return { type: 'group', text: group.id };
         }
-        
+
         // Проверка совпадения по студенту
         const matchedStudent = groupStudents.find(student => {
             const fullName = [
@@ -124,10 +121,10 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
             ].join(' ').toLowerCase();
             return fullName.includes(term);
         });
-        
+
         if (matchedStudent) {
-            return { 
-                type: 'student', 
+            return {
+                type: 'student',
                 text: [
                     matchedStudent.lastName,
                     matchedStudent.firstName,
@@ -135,26 +132,21 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
                 ].join(' ').trim()
             };
         }
-        
+
         // Проверка совпадения по дисциплине
-        const matchedDisciplines = (statements || [])
-            .filter(s => s?.groupId === group.id)
-            .filter(s => {
-                const disciplineName = disciplinesMap[s.disciplineId] || '';
-                return disciplineName.toLowerCase().includes(term);
-            })
-            .map(s => disciplinesMap[s.disciplineId]);
-        
+        const matchedDisciplines = (disciplinesMap[group.id] || [])
+            .filter(discipline => discipline.toLowerCase().includes(term));
+
         if (matchedDisciplines.length > 0) {
-            return { 
-                type: 'discipline', 
+            return {
+                type: 'discipline',
                 text: matchedDisciplines[0],
                 allDisciplines: matchedDisciplines
             };
         }
-        
+
         return { type: 'unknown', text: '' };
-    }, [searchTerm, allStudents, statements, disciplinesMap]);
+    }, [searchTerm, allStudents, disciplinesMap]);
 
     if (!isOpen) return null;
 
@@ -193,10 +185,10 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
                     ) : (
                         searchResults.map((group) => {
                             const matchInfo = getMatchInfo(group);
-                            
+
                             return (
-                                <button 
-                                    key={group.id} 
+                                <button
+                                    key={group.id}
                                     className={`flex items-center justify-between w-full p-3 text-gray-900 shadow rounded-lg transition border-l-4 
                                                 ${selectedGroup === group.id ? 'bg-teal-600 text-white border-teal-700' : 'bg-gray-100 border-teal-400'} 
                                                 hover:bg-teal-500 hover:text-white hover:shadow-lg`}

@@ -1,27 +1,26 @@
-import { Lesson, Statement } from "../models/index.js";
+import { Lesson, Journal } from "../models/index.js";
 import { Op } from "sequelize";
 
 /**
- * Получение занятий по ведомости
+ * Получение занятий по журналу
  */
-export const getLessonsByStatement = async (req, res) => {
+export const getLessonsByJournal = async (req, res) => {
     try {
-        const { statementId } = req.params;
+        const { journalId } = req.params;
 
-        // Проверяем, что statementId предоставлен и является числом
-        if (!statementId || isNaN(statementId)) {
-            return res.status(400).json({ error: "Неверный ID ведомости" });
+        // Проверяем, что journalId предоставлен и является числом
+        if (!journalId || isNaN(journalId)) {
+            return res.status(400).json({ error: "Неверный ID журнала" });
         }
 
         const lessons = await Lesson.findAll({
             where: { 
-                statementId: Number(statementId) // Явное приведение к числу
+                journalId: Number(journalId)
             },
-            order: [['date', 'ASC']], // Сортировка по дате (от старых к новым)
-            attributes: ["id", "statementId", "date"] // Выбираем только нужные поля
+            order: [['date', 'ASC']],
+            attributes: ["id", "journalId", "date"]
         });
 
-        // Возвращаем пустой массив, если занятия не найдены
         res.json(lessons || []);
     } catch (error) {
         console.error("Ошибка при получении занятий:", error);
@@ -37,63 +36,88 @@ export const getLessonsByStatement = async (req, res) => {
  */
 export const createLesson = async (req, res) => {
     try {
-        const { statementId, date } = req.body;
+        const { journalId, date } = req.body;
 
-        if (!statementId || !date) {
+        // Проверка обязательных полей
+        if (!journalId || !date) {
             return res.status(400).json({ 
                 success: false,
-                error: "Все обязательные поля должны быть заполнены" 
+                error: "Необходимо указать ID журнала и дату",
+                lesson: null
             });
         }
 
-        const statement = await Statement.findByPk(statementId);
-        if (!statement) {
+        const numericJournalId = Number(journalId);
+        if (isNaN(numericJournalId)) {
+            return res.status(400).json({ 
+                success: false,
+                error: "ID журнала должен быть числом",
+                lesson: null
+            });
+        }
+
+        // Проверка существования журнала
+        const journal = await Journal.findByPk(numericJournalId);
+        if (!journal) {
             return res.status(404).json({ 
                 success: false,
-                error: "Ведомость не найдена" 
+                error: "Журнал не найден",
+                lesson: null
             });
         }
 
-
-        // Поиск максимального номера занятия для этой ведомости
+        // Находим последнее занятие для этого журнала
         const lastLesson = await Lesson.findOne({
-            where: {
-                id: {
-                    [Op.between]: [
-                        Number(statementId) * 10 + 1,
-                        Number(statementId) * 10 + 9999
-                    ]
-                }
-            },
+            where: { journalId: numericJournalId },
             order: [['id', 'DESC']],
-            attributes: ['id']
         });
 
-        // Генерация нового ID занятия
-        let newLessonId;
+        // Генерация нового ID
+        let sequenceNumber;
         if (lastLesson) {
-            const lastNumber = parseInt(lastLesson.id.toString().slice(statementId.toString().length));
-            newLessonId = Number(statementId) * 10 + lastNumber + 1;
+            // Извлекаем последние 3 цифры из ID
+            const lastSequence = parseInt(lastLesson.id.toString().slice(-3));
+            sequenceNumber = lastSequence + 1;
         } else {
-            newLessonId = Number(statementId) * 10 + 1;
+            sequenceNumber = 1; // Первое занятие для этого журнала
         }
 
+        // Форматируем номер с ведущими нулями (3 цифры)
+        const formattedSequence = String(sequenceNumber).padStart(3, '0');
+        const newLessonId = Number(`${numericJournalId}${formattedSequence}`);
+
+        // Проверка, что ID не превысит допустимые пределы
+        if (sequenceNumber > 999) {
+            return res.status(400).json({
+                success: false,
+                error: "Достигнут максимальный номер занятия для этого журнала (999)",
+                lesson: null
+            });
+        }
+
+        // Создаем занятие
         const newLesson = await Lesson.create({
             id: newLessonId,
-            statementId,
-            date
+            journalId: numericJournalId,
+            date: new Date(date)
         });
 
         res.status(201).json({ 
             success: true,
-            lesson: newLesson 
+            lesson: {
+                id: newLesson.id,
+                journalId: newLesson.journalId,
+                date: newLesson.date.toISOString().split('T')[0]
+            },
+            error: null
         });
 
     } catch (error) {
         console.error("Ошибка при создании занятия:", error);
         res.status(500).json({ 
             success: false,
-            error: "Ошибка сервера" 
+            error: "Внутренняя ошибка сервера",
+            lesson: null
         });
     }
 };
@@ -117,7 +141,10 @@ export const updateLesson = async (req, res) => {
         res.json(lesson);
     } catch (error) {
         console.error("Ошибка при изменении занятия:", error);
-        res.status(500).json({ error: "Ошибка сервера" });
+        res.status(500).json({ 
+            error: "Ошибка сервера",
+            details: error.message
+        });
     }
 };
 
@@ -138,7 +165,10 @@ export const deleteLesson = async (req, res) => {
         res.json({ message: "Занятие успешно удалено" });
     } catch (error) {
         console.error("Ошибка при удалении занятия:", error);
-        res.status(500).json({ error: "Ошибка сервера" });
+        res.status(500).json({ 
+            error: "Ошибка сервера",
+            details: error.message
+        });
     }
 };
 
@@ -151,17 +181,20 @@ export const getTeacherLessons = async (req, res) => {
 
         const lessons = await Lesson.findAll({
             include: [{
-                model: Statement,
+                model: Journal,
                 where: { teacherLogin: login },
                 attributes: []
             }],
-            attributes: ["id", "statementId", "date"],
+            attributes: ["id", "journalId", "date"],
             order: [['date', 'ASC']]
         });
 
         res.json(lessons);
     } catch (error) {
         console.error("Ошибка при получении занятий преподавателя:", error);
-        res.status(500).json({ error: "Ошибка сервера" });
+        res.status(500).json({ 
+            error: "Ошибка сервера",
+            details: error.message
+        });
     }
 };

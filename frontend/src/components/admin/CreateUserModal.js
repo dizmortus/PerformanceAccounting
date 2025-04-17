@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchPossibleStatuses, fetchPossibleRoles, createUser, checkUserByLogin } from "../utils/api";
-import ConfirmModal from './ConfirmModal';
-import WarningModal from './WarningModal';
+import { fetchPossibleStatuses, fetchPossibleRoles, createUser, checkUserByLogin } from "../../utils/api";
+import ConfirmModal from '../ConfirmModal';
+import WarningModal from '../WarningModal';
 
 const CreateUserModal = ({ onClose }) => {
     const [showPassword, setShowPassword] = useState(false);

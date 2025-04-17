@@ -1,41 +1,25 @@
 'use client';
-import { useState } from 'react'; // Добавляем импорт useState
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { FaSearch, FaUsers, FaChevronRight } from 'react-icons/fa';
-import { fetchGroups } from '../utils/api';
 import GroupSearchModal from './GroupSearchModal';
 
-const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => {
+const SidebarTeacherContent = ({
+    // statements,
+    selectedGroup,
+    onGroupSelect,
+    setSearchOpen,
+    groups = [],  // Теперь ожидаем просто массив групп
+    groupsLoading,
+}) => {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
-
-    // Оптимизированная загрузка групп с кэшированием
-    const { data: groups = [], isLoading, isError } = useQuery({
-        queryKey: ['teacherGroups', statements.map(s => s.groupId).join(',')],
-        queryFn: async () => {
-            const uniqueGroupIds = [...new Set(statements.map(s => s.groupId))];
-            if (uniqueGroupIds.length === 0) return [];
-            return fetchGroups(uniqueGroupIds).then(data => 
-                data.sort((a, b) => a.id - b.id)
-            );
-        },
-        enabled: statements.length > 0,
-        staleTime: 10 * 60 * 1000, // 10 минут кэширования
-        refetchOnWindowFocus: false // Не обновлять при возврате на вкладку
-    });
 
     const handleGroupSelect = (groupId) => {
         onGroupSelect(selectedGroup === groupId ? '' : groupId);
     };
 
-    if (isLoading) return (
+    if (groupsLoading) return (
         <div className="flex-grow flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500"></div>
-        </div>
-    );
-
-    if (isError) return (
-        <div className="text-red-500 p-4 text-center">
-            Ошибка загрузки списка групп
         </div>
     );
 
@@ -66,7 +50,6 @@ const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => 
                                     ${selectedGroup === group.id ? 'bg-teal-600 text-white border-teal-700' : 'bg-gray-200 border-teal-500'} 
                                     hover:bg-teal-500 hover:text-white hover:shadow-lg hover:scale-[1.02]`}
                         onClick={() => handleGroupSelect(group.id)}
-                        aria-current={selectedGroup === group.id ? 'true' : 'false'}
                     >
                         <div className="flex items-center space-x-2">
                             <div className={`p-2 rounded-full transition 
@@ -87,7 +70,7 @@ const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => 
                 onClose={() => setIsSearchOpen(false)}
                 onGroupSelect={onGroupSelect}
                 selectedGroup={selectedGroup}
-                statements={statements}
+                // statements={statements}
                 groups={groups}
             />
         </>

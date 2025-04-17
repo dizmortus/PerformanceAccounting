@@ -1,26 +1,29 @@
 {
   "development": {
-    "username": "postgres",                  
-    "password": "1111",                  
-    "database": "PerformanceAccounting",     
-    "host": "127.0.0.1",                 
-    "dialect": "postgres",               
-    "port": 5432                         
+    "username": "postgres",
+    "password": "1111",
+    "database": "PerformanceAccounting",
+    "host": "127.0.0.1",
+    "dialect": "postgres",
+    "port": 5432,
+    "logging": false
   },
   "test": {
-    "username": "postgres",                  
-    "password": "1111",                  
-    "database": "PerformanceAccounting",     
-    "host": "127.0.0.1",                 
-    "dialect": "postgres",               
-    "port": 5432  
+    "username": "postgres",
+    "password": "1111",
+    "database": "PerformanceAccounting",
+    "host": "127.0.0.1",
+    "dialect": "postgres",
+    "port": 5432,
+    "logging": false
   },
   "production": {
-    "username": "postgres",                  
-    "password": "1111",                  
-    "database": "PerformanceAccounting",     
-    "host": "127.0.0.1",                 
-    "dialect": "postgres",               
-    "port": 5432  
+    "username": "postgres",
+    "password": "1111",
+    "database": "PerformanceAccounting",
+    "host": "127.0.0.1",
+    "dialect": "postgres",
+    "port": 5432,
+    "logging": false
   }
 }

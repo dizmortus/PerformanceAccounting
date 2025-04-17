@@ -24,10 +24,13 @@ import { setGrade, getPossibleGrades, getGrades, deleteGrade  } from "../control
 import { generateStatementDocument } from "../controllers/fileController.js";
 import { getStatementFile } from "../controllers/fileController.js";
 import { deleteUser, updateUser, createUser, getAllTeachers, changePassword } from "../controllers/userController.js";
+import { getGroupsByTeacher, getStatementsByTeacherAndGroup,getJournalsByTeacherAndGroup, getDisciplinesByTeacherAndGroup, getCurrentSemesterNumber  } from "../controllers/groupController.js";
+import { getAllSemesters, getExactSemester   } from "../controllers/semesterController.js";
+ 
 
 // Импорт контроллеров для занятий
 import {
-    getLessonsByStatement,
+    getLessonsByJournal,
     createLesson,
     updateLesson,
     deleteLesson,
@@ -39,7 +42,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const router = express.Router();
-
+router.get('/journals/teachers/:teacherLogin/groups/:groupId', verifyToken, getJournalsByTeacherAndGroup);
+router.get('/statements/teachers/:teacherLogin/groups/:groupId', verifyToken, getStatementsByTeacherAndGroup);
+router.get('/disciplines/teachers/:teacherLogin/groups/:groupId', verifyToken, getDisciplinesByTeacherAndGroup);
+router.get("/semesters/all", verifyToken, getAllSemesters );
+router.get('/semesters/group/:groupId/discipline/:disciplineId/semester/:semester', 
+    getExactSemester);
+router.get('/groups/:groupId/current-semester-number', verifyToken, getCurrentSemesterNumber );
 // Аутентификация
 router.post("/auth/login", login);
 router.post("/auth/register", register);
@@ -95,11 +104,12 @@ router.get("/statements/:statementId/missed-lessons", verifyToken, async (req, r
 });
 
 // Занятия
-router.get("/statements/:statementId/lessons", verifyToken, getLessonsByStatement);
+router.get("/lessons/journal/:journalId", verifyToken, getLessonsByJournal);
 router.post("/lessons", verifyToken, createLesson);
 router.put("/lessons/:id", verifyToken, updateLesson);
 router.delete("/lessons/:id", verifyToken, deleteLesson);
 router.get("/teacher/lessons", verifyToken, getTeacherLessons);
+router.get("/groups/teacher/:teacherLogin", verifyToken, getGroupsByTeacher);
 
 // Пользователи
 router.get("/users", getAllUsers);

@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchLessonsByStatementId, createNewLesson, submitGrades, fetchGrades, deleteGrades } from '../utils/api';
+import { fetchLessonsByJournalId, createNewLesson, submitGrades, fetchGrades, deleteGrades } from '../../utils/api';
 import { useMemo } from 'react';
 import GradesTable from './GradesTable';
 
 const PracticeForm = ({
-  selectedStatementId,
+  selectedJournalId,
   students,
   filteredGrades,
   onOpenConfirm,
@@ -14,37 +14,48 @@ const PracticeForm = ({
   handleCancelSelection
 }) => {
   const queryClient = useQueryClient();
-  const [gradesMap, setGradesMap] = useState(new Map()); // Map<statementId, grades>
-  const [originalGradesMap, setOriginalGradesMap] = useState(new Map()); // Map<statementId, originalGrades>
-  const [changedGradesMap, setChangedGradesMap] = useState(new Map()); // Map<statementId, changedGrades>
-  const [focusedCellMap, setFocusedCellMap] = useState(new Map()); // Map<statementId, focusedCell>
+  const [gradesMap, setGradesMap] = useState(new Map()); // Map<journalId, grades>
+  const [originalGradesMap, setOriginalGradesMap] = useState(new Map()); // Map<journalId, originalGrades>
+  const [changedGradesMap, setChangedGradesMap] = useState(new Map()); // Map<journalId, changedGrades>
+  const [focusedCellMap, setFocusedCellMap] = useState(new Map()); // Map<journalId, focusedCell>
   
   const [selectedDate, setSelectedDate] = useState('');
   const [hasReset, setHasReset] = useState(false);
   const tableRef = useRef(null);
 
-  // Получаем текущие состояния для выбранного statementId
-  const grades = useMemo(() => gradesMap.get(selectedStatementId) || {}, [gradesMap, selectedStatementId]);
-  const originalGrades = useMemo(() => originalGradesMap.get(selectedStatementId) || {}, [originalGradesMap, selectedStatementId]);
-  const changedGrades = useMemo(() => changedGradesMap.get(selectedStatementId) || {}, [changedGradesMap, selectedStatementId]);
+  // Получаем текущие состояния для выбранного journalId
+  const grades = useMemo(() => gradesMap.get(selectedJournalId) || {}, [gradesMap, selectedJournalId]);
+  const originalGrades = useMemo(() => originalGradesMap.get(selectedJournalId) || {}, [originalGradesMap, selectedJournalId]);
+  const changedGrades = useMemo(() => changedGradesMap.get(selectedJournalId) || {}, [changedGradesMap, selectedJournalId]);
   const focusedCell = useMemo(() => {
-    return focusedCellMap.get(selectedStatementId) || { studentIndex: 0, dateIndex: 0 };
-  }, [focusedCellMap, selectedStatementId]);
+    return focusedCellMap.get(selectedJournalId) || { studentIndex: 0, dateIndex: 0 };
+  }, [focusedCellMap, selectedJournalId]);
   
   
 
   // Запросы данных с React Query
   const { data: lessons = [], isLoading: isLoadingLessons } = useQuery({
-    queryKey: ['lessons', selectedStatementId],
-    queryFn: () => fetchLessonsByStatementId(selectedStatementId),
-    enabled: !!selectedStatementId,
+    queryKey: ['lessons', selectedJournalId],
+    queryFn: () => fetchLessonsByJournalId(selectedJournalId),
+    enabled: !!selectedJournalId,
     staleTime: 5 * 60 * 1000,
+    onSuccess: (data) => {
+      console.log('Загруженные занятия:', data);
+      console.log('ID журнала:', selectedJournalId);
+      data.forEach(lesson => {
+        console.log(`Занятие ID: ${lesson.id}, Дата: ${lesson.date}, Журнал ID: ${lesson.journalId}`);
+      });
+    }
   });
 
-  const today = new Date().toLocaleDateString('sv-SE', {
+  // Вынесите вычисление даты в useMemo
+const today = useMemo(() => {
+  const date = new Date().toLocaleDateString('sv-SE', {
     timeZone: 'Europe/Minsk'
-  }); // 'sv-SE' даёт формат YYYY-MM-DD
-  console.log('Сегодняшняя дата (Минск):', today);
+  });
+  console.log('Сегодняшняя дата (Минск):', date); // Будет логироваться только при монтировании
+  return date;
+}, []); // Пустой массив зависимостей = только при монтировании
   const availableDates = useMemo(() => {
     const lessonDates = lessons.map(lesson =>
       new Date(lesson.date).toISOString().split('T')[0]
@@ -58,7 +69,7 @@ const PracticeForm = ({
   const createLessonMutation = useMutation({
     mutationFn: createNewLesson,
     onSuccess: () => {
-      queryClient.invalidateQueries(['lessons', selectedStatementId]);
+      queryClient.invalidateQueries(['lessons', selectedJournalId]);
     }
   });
 
@@ -115,7 +126,7 @@ const PracticeForm = ({
       }
   
       // Затем загружаем из localStorage
-      const savedGrades = loadGradesFromLocalStorage(selectedStatementId) || {};
+      const savedGrades = loadGradesFromLocalStorage(selectedJournalId) || {};
   
       // Объединяем данные и определяем измененные оценки
       const mergedGrades = {};
@@ -142,13 +153,13 @@ const PracticeForm = ({
       });
   
       // Обновляем Map'ы
-      setGradesMap(prev => new Map(prev).set(selectedStatementId, mergedGrades));
-      setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, mergedOriginalGrades));
-      setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, newChangedGrades));
+      setGradesMap(prev => new Map(prev).set(selectedJournalId, mergedGrades));
+      setOriginalGradesMap(prev => new Map(prev).set(selectedJournalId, mergedOriginalGrades));
+      setChangedGradesMap(prev => new Map(prev).set(selectedJournalId, newChangedGrades));
     };
   
     loadAllGrades();
-  }, [lessons, students, availableDates, queryClient, selectedStatementId]);
+  }, [lessons, students, availableDates, queryClient, selectedJournalId]);
 
   const handleGradeChange = useCallback((studentId, date, value) => {
     const newGrades = {
@@ -160,11 +171,11 @@ const PracticeForm = ({
     };
   
     // Обновляем gradesMap
-    setGradesMap(prev => new Map(prev).set(selectedStatementId, newGrades));
-    saveGradesToLocalStorage(selectedStatementId, newGrades);
+    setGradesMap(prev => new Map(prev).set(selectedJournalId, newGrades));
+    saveGradesToLocalStorage(selectedJournalId, newGrades);
   
     setChangedGradesMap(prev => {
-      const currentChangedGrades = prev.get(selectedStatementId) || {};
+      const currentChangedGrades = prev.get(selectedJournalId) || {};
       const newChangedGrades = { ...currentChangedGrades };
       
       if (originalGrades[studentId]?.[date] !== value) {
@@ -177,19 +188,19 @@ const PracticeForm = ({
         }
       }
       
-      return new Map(prev).set(selectedStatementId, newChangedGrades);
+      return new Map(prev).set(selectedJournalId, newChangedGrades);
     });
-  }, [grades, originalGrades, selectedStatementId]);
+  }, [grades, originalGrades, selectedJournalId]);
   
 
   // Функция для сохранения оценок в localStorage
-  const saveGradesToLocalStorage = (statementId, grades) => {
-    localStorage.setItem(`grades_${statementId}`, JSON.stringify(grades));
+  const saveGradesToLocalStorage = (journalId, grades) => {
+    localStorage.setItem(`grades_${journalId}`, JSON.stringify(grades));
   };
   
   // Функция для загрузки оценок из localStorage
-  const loadGradesFromLocalStorage = (statementId) => {
-    const savedGrades = localStorage.getItem(`grades_${statementId}`);
+  const loadGradesFromLocalStorage = (journalId) => {
+    const savedGrades = localStorage.getItem(`grades_${journalId}`);
     return savedGrades ? JSON.parse(savedGrades) : null;
   };
 
@@ -210,13 +221,13 @@ const PracticeForm = ({
   // Обработчик отмены изменений
   const handleCancel = useCallback(() => {
     // Обновляем Map'ы
-    setGradesMap(prev => new Map(prev).set(selectedStatementId, originalGrades));
-    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
+    setGradesMap(prev => new Map(prev).set(selectedJournalId, originalGrades));
+    setChangedGradesMap(prev => new Map(prev).set(selectedJournalId, {}));
     setHasReset(true);
     
     // Очищаем сохраненные в localStorage оценки при отмене
-    localStorage.removeItem(`grades_${selectedStatementId}`);
-  }, [originalGrades, selectedStatementId]);
+    localStorage.removeItem(`grades_${selectedJournalId}`);
+  }, [originalGrades, selectedJournalId]);
 
   const handleSavePractice = useCallback(() => {
     onOpenConfirm(
@@ -231,7 +242,7 @@ const PracticeForm = ({
               let lessonId;
               if (!lesson) {
                 const result = await createLessonMutation.mutateAsync({
-                  statementId: selectedStatementId,
+                  journalId: selectedJournalId,
                   date: date
                 });
                 
@@ -261,11 +272,11 @@ const PracticeForm = ({
           }
   
           // Обновляем Map'ы после сохранения
-          setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, grades));
-          setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
+          setOriginalGradesMap(prev => new Map(prev).set(selectedJournalId, grades));
+          setChangedGradesMap(prev => new Map(prev).set(selectedJournalId, {}));
           
           // Очищаем сохраненные в localStorage оценки после успешного сохранения
-          localStorage.removeItem(`grades_${selectedStatementId}`);
+          localStorage.removeItem(`grades_${selectedJournalId}`);
           
         } catch (error) {
           console.error("Ошибка сохранения:", error);
@@ -276,7 +287,7 @@ const PracticeForm = ({
       "",
       false
     );
-  }, [changedGrades, grades, lessons, selectedStatementId, 
+  }, [changedGrades, grades, lessons, selectedJournalId, 
       onOpenConfirm, onShowWarning, createLessonMutation, 
       submitGradesMutation, deleteGradesMutation]);
 
@@ -322,8 +333,8 @@ const PracticeForm = ({
   }, [filteredGrades, handleSetGrade, focusedCell, grades, students, availableDates]);
 
   const handleCellClick = useCallback((studentIndex, dateIndex) => {
-    setFocusedCellMap(prev => new Map(prev).set(selectedStatementId, { studentIndex, dateIndex }));
-  }, [selectedStatementId]);
+    setFocusedCellMap(prev => new Map(prev).set(selectedJournalId, { studentIndex, dateIndex }));
+  }, [selectedJournalId]);
       
   const hasChanges = Object.keys(changedGrades).length > 0;
   const currentStudentId = students[focusedCell.studentIndex]?.id;
@@ -335,7 +346,7 @@ const PracticeForm = ({
       <div className="flex">
         <div className="flex-1 overflow-auto">
         <GradesTable
-  statementId={selectedStatementId}
+  journalId={selectedJournalId}
   students={students}
   availableDates={availableDates}
   grades={grades}

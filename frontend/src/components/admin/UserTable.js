@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchAllUsers, fetchPossibleStatuses, fetchPossibleRoles } from "../utils/api";
+import { fetchAllUsers, fetchPossibleStatuses, fetchPossibleRoles } from "../../utils/api";
 import EditUserModal from "./EditUserModal";
 import CreateUserModal from "./CreateUserModal";
 

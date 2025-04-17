@@ -1,9 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchPossibleStatuses, fetchPossibleRoles, updateUser, deleteUser, hasTeacherStatements } from "../utils/api";
-import ConfirmModal from './ConfirmModal';
-import WarningModal from './WarningModal';
+import { fetchPossibleStatuses, fetchPossibleRoles, updateUser, deleteUser, hasTeacherStatements } from "../../utils/api";
+import ConfirmModal from '../ConfirmModal';
+import WarningModal from '../WarningModal';
 
 const EditUserModal = ({ user, onClose, currentUserLogin }) => { // Добавлен currentUserLogin
     const [showPassword, setShowPassword] = useState(false);

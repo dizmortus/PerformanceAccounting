@@ -1,29 +1,11 @@
-// src/models/educationalProcess.js
+// src/models/semester.js
 export default (sequelize, DataTypes) => {
-    const EducationalProcess = sequelize.define('EducationalProcess', {
+    const Semester = sequelize.define('Semester', {
       id: {
         type: DataTypes.BIGINT,
         primaryKey: true,
         autoIncrement: true,
         field: 'ID'
-      },
-      teacherLogin: {
-        type: DataTypes.STRING,
-        references: {
-          model: 'Пользователи',
-          key: 'Логин'
-        },
-        allowNull: false,
-        field: 'Преподаватель'
-      },
-      disciplineId: {
-        type: DataTypes.BIGINT,
-        references: {
-          model: 'Дисциплины',
-          key: 'ID'
-        },
-        allowNull: false,
-        field: 'ID Дисциплины'
       },
       groupId: {
         type: DataTypes.BIGINT,
@@ -34,13 +16,14 @@ export default (sequelize, DataTypes) => {
         allowNull: false,
         field: 'ID Группы'
       },
-      practiceHours: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        validate: {
-          min: 0
+      disciplineId: {
+        type: DataTypes.BIGINT,
+        references: {
+          model: 'Дисциплины',
+          key: 'ID'
         },
-        field: 'Часы практики'
+        allowNull: false,
+        field: 'ID Дисциплины'
       },
       semester: {
         type: DataTypes.INTEGER,
@@ -49,11 +32,27 @@ export default (sequelize, DataTypes) => {
           isIn: [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]
         },
         field: 'Семестр'
+      },
+      hours: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        validate: {
+          min: 0
+        },
+        field: 'Часы'
+      },
+      creditUnits: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        validate: {
+          min: 0
+        },
+        field: 'Зачетные единицы'
       }
     }, {
-      tableName: 'Учебный процесс',
+      tableName: 'Семестры',
       timestamps: false
     });
   
-    return EducationalProcess;
+    return Semester;
   };

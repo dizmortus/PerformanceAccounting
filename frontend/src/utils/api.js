@@ -619,7 +619,7 @@ export const createNewLesson = async (lessonData) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                statementId: lessonData.statementId,
+                journalId: lessonData.journalId,
                 date: new Date(lessonData.date).toISOString()
             }),
         });
@@ -650,9 +650,9 @@ export const createNewLesson = async (lessonData) => {
     }
 };
   
-export const fetchLessonsByStatementId = async (statementId) => {
+export const fetchLessonsByJournalId = async (journalId) => {
     try {
-      const response = await fetchWithAuth(`/api/statements/${statementId}/lessons`);
+      const response = await fetchWithAuth(`/api/lessons/journal/${journalId}`);
       
       if (!response.ok) {
         // Если статус 404, возвращаем пустой массив вместо ошибки
@@ -677,12 +677,12 @@ export const fetchLessonsByStatementId = async (statementId) => {
       // Преобразуем данные, если массив не пустой
       return lessons.map(lesson => ({
         id: lesson.id,
-        statementId: lesson.statementId,
+        journalId: lesson.journalId,
         date: lesson.date ? new Date(lesson.date) : null // Добавил проверку на наличие даты
       }));
   
     } catch (error) {
-      console.error(`Ошибка при получении занятий для ведомости ${statementId}:`, error);
+      console.error(`Ошибка при получении занятий для ведомости ${journalId}:`, error);
       // В случае ошибки возвращаем пустой массив, чтобы клиент мог продолжить работу
       return [];
     }
@@ -826,3 +826,159 @@ export const fetchAverageGrades = async (statementId) => {
         throw error;
     }
 }
+
+
+export const getTeacherGroups = async (teacherLogin) => {
+    try {
+        const response = await fetchWithAuth(`/api/groups/teacher/${teacherLogin}`);
+        if (!response || !response.ok) {
+            console.error("Ошибка при получении групп преподавателя");
+            return null;
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error("Ошибка при запросе групп преподавателя:", error);
+        return null;
+    }
+};
+/**
+ * Получает журналы преподавателя для конкретной группы
+ * @param {string} teacherLogin - Логин преподавателя
+ * @param {string} groupId - ID группы
+ * @returns {Promise<Array>} - Массив журналов с данными о дисциплинах
+ */
+export const getTeacherJournals = async (teacherLogin, groupId) => {
+    try {
+        const response = await fetchWithAuth(
+            `/api/journals/teachers/${teacherLogin}/groups/${groupId}`
+        );
+        
+        if (!response || !response.ok) {
+            throw new Error('Не удалось загрузить журналы');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Ошибка при получении журналов:', error);
+        throw error;
+    }
+};
+
+/**
+ * Получает ведомости преподавателя для конкретной группы
+ * @param {string} teacherLogin - Логин преподавателя
+ * @param {string} groupId - ID группы
+ * @returns {Promise<Array>} - Массив ведомостей с данными о дисциплинах
+ */
+export const getTeacherStatements = async (teacherLogin, groupId) => {
+    try {
+        const response = await fetchWithAuth(
+            `/api/statements/teachers/${teacherLogin}/groups/${groupId}`
+        );
+        
+        if (!response || !response.ok) {
+            throw new Error('Не удалось загрузить ведомости');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Ошибка при получении ведомостей:', error);
+        throw error;
+    }
+};
+/**
+ * Получает дисциплины преподавателя для конкретной группы
+ * @param {string} teacherLogin - Логин преподавателя
+ * @param {string} groupId - ID группы
+ * @returns {Promise<Array>} - Массив дисциплин
+ */
+export const getTeacherDisciplines = async (teacherLogin, groupId) => {
+    try {
+        const response = await fetchWithAuth(
+            `/api/disciplines/teachers/${teacherLogin}/groups/${groupId}`
+        );
+        
+        if (!response || !response.ok) {
+            throw new Error('Не удалось загрузить дисциплины');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Ошибка при получении дисциплин преподавателя:', error);
+        throw error;
+    }
+};
+
+/**
+ * Получает список всех семестров
+ * @returns {Promise<Array>} - Массив объектов с данными о семестрах
+ * @throws {Error} - Если произошла ошибка при получении данных
+ */
+export const getAllSemesters = async () => {
+    try {
+        const response = await fetchWithAuth('/api/semesters/all');
+        
+        if (!response || !response.ok) {
+            throw new Error('Не удалось загрузить список семестров');
+        }
+        
+        const data = await response.json();
+        return data.data; // Возвращаем только массив семестров из поля data
+    } catch (error) {
+        console.error('Ошибка при получении списка семестров:', error);
+        throw error;
+    }
+};
+/**
+ * Получает текущий номер семестра для указанной группы
+ * @param {string} groupId - ID группы
+ * @returns {Promise<number>} - Номер текущего семестра (1-10)
+ * @throws {Error} - Если произошла ошибка при получении данных
+ */
+export const getCurrentSemesterNumber = async (groupId) => {
+    try {
+        const response = await fetchWithAuth(
+            `/api/groups/${groupId}/current-semester-number`
+        );
+        
+        if (!response || !response.ok) {
+            throw new Error('Не удалось получить текущий семестр группы');
+        }
+        
+        // Парсим ответ как число
+        const semesterNumber = await response.json();
+        return Number(semesterNumber);
+        
+    } catch (error) {
+        console.error('Ошибка при получении текущего семестра группы:', {
+            groupId,
+            error: error.message
+        });
+        throw error;
+    }
+};
+
+// В api.js добавляем новый метод
+/**
+ * Получает конкретный семестр по группе, дисциплине и номеру семестра
+ * @param {string} groupId - ID группы
+ * @param {string} disciplineId - ID дисциплины
+ * @param {number} semester - Номер семестра
+ * @returns {Promise<Object|null>} - Объект семестра или null если не найден
+ */
+export const getExactSemester = async (groupId, disciplineId, semester) => {
+    try {
+        const response = await fetchWithAuth(
+            `/api/semesters/group/${groupId}/discipline/${disciplineId}/semester/${semester}`
+        );
+        
+        if (!response || !response.ok) return null;
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Ошибка при получении семестра:', error);
+        return null;
+    }
+};

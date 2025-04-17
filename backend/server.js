@@ -18,10 +18,10 @@ app.use(cors());
 app.use(express.json());
 
 // Middleware для логирования всех запросов
-app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Body:`, req.body);
-    next();
-});
+// app.use((req, res, next) => {
+//     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Body:`, req.body);
+//     next();
+// });
 
 // Все маршруты теперь идут через "/api"
 app.use("/api", router);
