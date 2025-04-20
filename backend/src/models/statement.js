@@ -15,6 +15,15 @@ export default (sequelize, DataTypes) => {
       allowNull: false,
       field: 'Преподаватель'
     },
+    classTeacherLogin: {
+      type: DataTypes.STRING,
+      references: {
+        model: 'Пользователи',
+        key: 'Логин'
+      },
+      allowNull: true,
+      field: 'Преподаватель занятий'
+    },
     disciplineId: {
       type: DataTypes.BIGINT,
       references: {

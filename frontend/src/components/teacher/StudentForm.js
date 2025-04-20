@@ -1,11 +1,11 @@
 'use client';
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import PracticeForm from './PracticeForm';
 import AttestationForm from './AttestationForm';
-import { fetchStudents, fetchPossibleGrades, downloadStatement } from '../utils/api';
-import ConfirmModal from './ConfirmModal';
-import WarningModal from './WarningModal';
+import { fetchStudents, fetchPossibleGrades, downloadStatement } from '../../utils/api';
+import ConfirmModal from '../ConfirmModal';
+import WarningModal from '../WarningModal';
 import SuccessModal from './SuccessModal';
 import { useRef } from "react";
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,13 +14,14 @@ const StudentForm = ({
     selectedGroup,
     filteredStatements,
     handleCancelSelection,
+    teacherLogin
 }) => {
     // 1. State declarations
     const [mode, setMode] = useState(() => {
         if (typeof window !== 'undefined') {
-            return localStorage.getItem('studentFormMode') || 'statement';
+            return localStorage.getItem('studentFormMode') || 'learning';
         }
-        return 'statement';
+        return 'learning';
     });
 
     const [selectedStatementId, setSelectedStatementId] = useState(() => {
@@ -45,7 +46,7 @@ const StudentForm = ({
     const { data: students = [], refetch: refetchStudents } = useQuery({
         queryKey: ['students', selectedGroup],
         queryFn: () => fetchStudents(selectedGroup),
-        enabled: !!selectedGroup,
+        enabled: !!selectedGroup && !!selectedStatementId, // Запрашиваем студентов только при выбранной ведомости
         select: (data) => data.sort((a, b) => a.lastName.localeCompare(b.lastName))
     });
 
@@ -56,13 +57,18 @@ const StudentForm = ({
     });
 
     // 3. Helper functions
+    const isCurrentSemesterStatement = useCallback((statement) => {
+        if (statement.list && statement.list.trim() !== '') {
+            return false;
+        }
+        return true;
+    }, []);
+
     const isTodayStatement = useCallback((statement) => {
-        // First check if statement.list is empty or whitespace
         if (statement.list && statement.list.trim() !== '') {
             return false;
         }
         
-        // Then check if the date is today
         const today = new Date();
         const todayLocalDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
         const todayString = todayLocalDate.toISOString().split('T')[0];
@@ -74,24 +80,34 @@ const StudentForm = ({
         return statementDateString === todayString;
     }, []);
 
-    const hasTodayStatement = useCallback(() => {
-        return filteredStatements.some(isTodayStatement);
-    }, [filteredStatements, isTodayStatement]);
-
     const getAvailableStatements = useCallback(() => {
-        return mode === 'learning' 
-            ? filteredStatements 
-            : filteredStatements.filter(isTodayStatement);
-    }, [mode, filteredStatements, isTodayStatement]);
+        // Фильтруем ведомости по роли преподавателя
+        const roleFilteredStatements = filteredStatements.filter(statement => {
+            if (mode === 'learning') {
+                return statement.classTeacherLogin === teacherLogin;
+            } else {
+                return statement.teacherLogin === teacherLogin;
+            }
+        });
+
+        if (mode === 'learning') {
+            return roleFilteredStatements.filter(statement => 
+                isCurrentSemesterStatement(statement))
+        } else {
+            return roleFilteredStatements.filter(statement => 
+                isTodayStatement(statement) && 
+                ['зачет', 'экзамен', 'дифференцированный зачет'].includes(statement.assessmentType))
+        }
+    }, [mode, filteredStatements, isCurrentSemesterStatement, isTodayStatement, teacherLogin]);
 
     // 4. Effects for local storage and derived state
-    React.useEffect(() => {
+    useEffect(() => {
         if (typeof window !== 'undefined' && selectedStatementId) {
             localStorage.setItem('selectedStatementId', selectedStatementId);
         }
     }, [selectedStatementId]);
 
-    React.useEffect(() => {
+    useEffect(() => {
         const availableStatements = getAvailableStatements();
         
         if (availableStatements.length > 0) {
@@ -107,13 +123,13 @@ const StudentForm = ({
         }
     }, [getAvailableStatements, selectedStatementId]);
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (typeof window !== 'undefined') {
             localStorage.setItem('studentFormMode', mode);
         }
     }, [mode]);
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (selectedStatementId && filteredStatements.length) {
             const selectedStatement = filteredStatements.find(statement => statement.id === selectedStatementId);
             const assessmentType = mode === 'learning' 
@@ -129,6 +145,9 @@ const StudentForm = ({
         }
     }, [selectedStatementId, filteredStatements, possibleGrades, mode]);
 
+    const availableStatements = getAvailableStatements();
+    const hasStatements = availableStatements.length > 0;
+
     // 5. Event handlers
     const handleStatementSelect = (statementId) => {
         setSelectedStatementId(statementId);
@@ -139,10 +158,6 @@ const StudentForm = ({
     };
     
     const handleSetStatementMode = () => {
-        if (!hasTodayStatement()) {
-            showWarningModal("Нет ведомости с сегодняшней датой. Аттестация невозможна.");
-            return;
-        }
         setMode('statement');
     };
 
@@ -183,15 +198,11 @@ const StudentForm = ({
     const closeWarningModal = () => setIsWarningModalOpen(false);
     const queryClient = useQueryClient();
 
-    // Модифицированная функция закрытия SuccessModal
     const closeSuccessModal = () => {
         setIsSuccessModalOpen(false);
         queryClient.invalidateQueries(['statements', selectedGroup]);
     };
 
-    const availableStatements = getAvailableStatements();
-
-    // Вспомогательная функция для сокращения первого слова
     const shortenFirstWord = (text) => {
         const words = text.split(' ');
         if (words.length > 1) return text;
@@ -203,14 +214,14 @@ const StudentForm = ({
     const [startX, setStartX] = useState(0);
     const [scrollLeft, setScrollLeft] = useState(0);
     const [isMouseDown, setIsMouseDown] = useState(false);
-    const didDragRef = useRef(false); // 🆕 флаг для отмены клика
+    const didDragRef = useRef(false);
     
     const handleMouseDown = (e) => {
         setIsDragging(true);
         setIsMouseDown(true);
         setStartX(e.pageX - scrollRef.current.offsetLeft);
         setScrollLeft(scrollRef.current.scrollLeft);
-        didDragRef.current = false; // сброс
+        didDragRef.current = false;
     };
     
     const handleMouseMove = (e) => {
@@ -220,7 +231,6 @@ const StudentForm = ({
         const walk = (x - startX) * 1;
         scrollRef.current.scrollLeft = scrollLeft - walk;
     
-        // если смещение > 5px, это считается drag
         if (Math.abs(x - startX) > 5) {
             didDragRef.current = true;
         }
@@ -230,7 +240,6 @@ const StudentForm = ({
         setIsDragging(false);
         setIsMouseDown(false);
     
-        // сброс через короткий таймер, чтобы onClick не сработал после drag
         setTimeout(() => {
             didDragRef.current = false;
         }, 0);
@@ -260,7 +269,7 @@ const StudentForm = ({
                         onMouseMove={handleMouseMove}
                     >
                         <div className="flex space-x-2 " style={{ minWidth: 'max-content' }}>
-                            {availableStatements.length > 0 ? (
+                            {hasStatements ? (
                                 availableStatements.map(statement => (
                                     <button
                                         key={statement.id}
@@ -273,11 +282,10 @@ const StudentForm = ({
                                             if (didDragRef.current) {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                return; // отменяем выбор, если был drag
+                                                return;
                                             }
                                             handleStatementSelect(statement.id);
                                         }}
-                                        disabled={mode === 'statement' && !hasTodayStatement()}
                                         title={statement.disciplineName}
                                     >
                                         <div className="font-semibold text-sm leading-none mb-1 line-clamp-1">
@@ -296,8 +304,8 @@ const StudentForm = ({
                                     </button>
                                 ))
                             ) : (
-                                <div className="px-3 py-2 min-w-[180px] h-[60px] flex flex-col justify-center text-center rounded border border-gray-200 bg-gray-100 text-gray-500">
-                                    {mode === 'statement' ? 'Нет ведомостей на сегодня' : 'Нет доступных ведомостей'}
+                                <div className="px-3 py-2 min-w-[180px] h-[50px] flex flex-col justify-center text-center rounded border border-gray-200 bg-gray-100 text-gray-500">
+                                    {mode === 'statement' ? 'Нет ведомостей для аттестации' : 'Нет доступных ведомостей'}
                                 </div>
                             )}
                         </div>
@@ -331,8 +339,16 @@ const StudentForm = ({
                     </div>
                 </div>
 
-                {/* Остальная часть компонента без изменений */}
-                {mode === 'learning' ? (
+                {/* ОСНОВНОЕ СОДЕРЖИМОЕ */}
+                {!hasStatements ? (
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center  text-gray-500">
+                            {mode === 'statement' 
+                                ? 'Нет доступных ведомостей для аттестации' 
+                                : 'Нет доступных ведомостей для текущих занятий'}
+                        </div>
+                    </div>
+                ) : mode === 'learning' ? (
                     <PracticeForm 
                         selectedStatementId={selectedStatementId}
                         handleCancelSelection={handleCancelSelection}
@@ -342,31 +358,25 @@ const StudentForm = ({
                         onShowWarning={showWarningModal}
                     />
                 ) : (
-                    hasTodayStatement() ? (
-                        <AttestationForm 
-                            selectedStatementId={selectedStatementId}
-                            handleCancelSelection={handleCancelSelection}
-                            students={students}
-                            filteredGrades={filteredGrades}
-                            onOpenConfirm={openConfirmModal}
-                            onShowWarning={showWarningModal}
-                            onShowSuccess={(message) => {
-                                setConfirmationData(prev => ({
-                                    ...prev,
-                                    successMessage: message
-                                }));
-                                setIsSuccessModalOpen(true);
-                            }}
-                        />
-                    ) : (
-                        <div className="text-center py-10 text-gray-500">
-                            Нет ведомости с сегодняшней датой для аттестации
-                        </div>
-                    )
+                    <AttestationForm 
+                        selectedStatementId={selectedStatementId}
+                        handleCancelSelection={handleCancelSelection}
+                        students={students}
+                        filteredGrades={filteredGrades}
+                        onOpenConfirm={openConfirmModal}
+                        onShowWarning={showWarningModal}
+                        onShowSuccess={(message) => {
+                            setConfirmationData(prev => ({
+                                ...prev,
+                                successMessage: message
+                            }));
+                            setIsSuccessModalOpen(true);
+                        }}
+                    />
                 )}
             </div>
             
-            {/* Модальные окна (без изменений) */}
+            {/* Модальные окна */}
             <ConfirmModal
                 isOpen={isConfirmModalOpen}
                 onClose={closeConfirmModal}

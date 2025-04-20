@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FaSearch, FaUsers, FaChevronRight, FaTimes } from 'react-icons/fa';
-import { fetchStudents, fetchDisciplineName } from '../utils/api';
+import { fetchStudents, fetchDisciplineName } from '../../utils/api';
 
 const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, statements, groups }) => {
     const [searchTerm, setSearchTerm] = useState('');

@@ -6,11 +6,13 @@ import {
     fetchTeacherInfo,
     handleLogout
 } from '../../utils/api';
-import SidebarAdminContent from '../../components/SidebarAdminContent';
+import SidebarAdminContent from '../../components/admin/SidebarAdminContent';
 import Sidebar from '../../components/Sidebar';
 import UserProfile from '../../components/UserProfile';
-import UserTable from '../../components/UserTable';
-import StatementTable from '../../components/StatementTable';
+import UserTable from '../../components/admin/user/UserTable';
+import StatementTable from '../../components/admin/statement/StatementTable';
+import GroupTable from '../../components/admin/group/GroupTable';
+import StudentTable from '../../components/admin/student/StudentTable'; // Add this import
 import { checkAuth } from '../../utils/auth';
 
 export default function AdminDashboard() {
@@ -86,13 +88,23 @@ export default function AdminDashboard() {
                         {selectedCategory === 'users' && (
                             <UserTable 
                                 onCancel={handleCancel} 
-                                currentUserLogin={login} // Передаем логин текущего пользователя
+                                currentUserLogin={login}
                             />
                         )}
                         {selectedCategory === 'statements' && (
                             <StatementTable 
                                 onCancel={handleCancel}
-                                currentUserLogin={login} // Передаем логин текущего пользователя
+                                currentUserLogin={login}
+                            />
+                        )}
+                        {selectedCategory === 'groups' && (
+                            <GroupTable 
+                                onCancel={handleCancel}
+                            />
+                        )}
+                        {selectedCategory === 'students' && (
+                            <StudentTable 
+                                onCancel={handleCancel}
                             />
                         )}
                     </>

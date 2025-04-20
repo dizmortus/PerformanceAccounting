@@ -1,9 +1,10 @@
+// src/models/user.js
 export default (sequelize, DataTypes) => {
   const User = sequelize.define('User', {
     login: {
       type: DataTypes.STRING,
       primaryKey: true,
-      field: 'Логин' // Название столбца в базе данных
+      field: 'Логин'
     },
     email: {
       type: DataTypes.STRING,
@@ -11,7 +12,7 @@ export default (sequelize, DataTypes) => {
       unique: true,
       field: 'Почта',
       validate: {
-        isEmail: true, // Валидация формата email
+        isEmail: true,
       }
     },
     passwordHash: {
@@ -34,21 +35,32 @@ export default (sequelize, DataTypes) => {
       field: 'Отчество'
     },
     role: {
-      type: DataTypes.ENUM('Преподаватель', 'Администратор'), // Ограничение значений
+      type: DataTypes.ENUM('Преподаватель', 'Администратор'),
       allowNull: false,
       field: 'Роль',
-      defaultValue: 'Преподаватель', // Значение по умолчанию
+      defaultValue: 'Преподаватель',
       validate: {
-        isIn: [['Преподаватель', 'Администратор']], // Валидация допустимых значений
+        isIn: [['Преподаватель', 'Администратор']],
       }
     },
     status: {
-      type: DataTypes.ENUM('Активный', 'Заблокированный'), // Ограничение значений
+      type: DataTypes.ENUM('Активный', 'Заблокированный'),
       allowNull: false,
       field: 'Статус',
-      defaultValue: 'Активный', // Значение по умолчанию
+      defaultValue: 'Активный',
       validate: {
-        isIn: [['Активный', 'Заблокированный']], // Валидация допустимых значений
+        isIn: [['Активный', 'Заблокированный']],
+      }
+    },
+    facultyId: {
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      field: 'ID Факультета',
+      references: {
+        model: {
+          tableName: 'Факультеты' // Явное указание имени таблицы
+        },
+        key: 'ID'
       }
     },
     refreshToken: {
@@ -57,7 +69,7 @@ export default (sequelize, DataTypes) => {
       field: 'Рефреш токен'
     }
   }, {
-    tableName: 'Пользователи', // Название таблицы в базе данных
+    tableName: 'Пользователи',
     timestamps: false
   });
 

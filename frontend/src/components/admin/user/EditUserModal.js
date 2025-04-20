@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchPossibleStatuses, fetchPossibleRoles, updateUser, deleteUser, hasTeacherStatements } from "../utils/api";
-import ConfirmModal from './ConfirmModal';
-import WarningModal from './WarningModal';
+import { fetchPossibleStatuses, fetchPossibleRoles, updateUser, deleteUser, hasTeacherStatements } from "../../../utils/api";
+import ConfirmModal from '../../ConfirmModal';
+import WarningModal from '../../WarningModal';
+import SearchableSelect from '../SearchableSelect';
 
 const EditUserModal = ({ user, onClose, currentUserLogin }) => { // Добавлен currentUserLogin
     const [showPassword, setShowPassword] = useState(false);
@@ -221,25 +222,25 @@ const EditUserModal = ({ user, onClose, currentUserLogin }) => { // Добавл
                             )}
                         </div>
 
-                        {/* Role */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Роль</label>
-                            <select
-                                value={localUser.role || ""}
-                                onChange={(e) => handleChange(e, "role")}
-                                className={`w-full px-2 py-1 border rounded-lg ${
-                                    validationErrors.role ? "border-red-500" : ""
-                                }`}
-                            >
-                                <option value="">Выберите роль</option>
-                                {roles.map(role => (
-                                    <option key={role} value={role}>{role}</option>
-                                ))}
-                            </select>
-                            {validationErrors.role && (
-                                <p className="text-red-500 text-sm mt-1">{validationErrors.role}</p>
-                            )}
-                        </div>
+            
+{/* Role */}
+<div>
+    <label className="block text-sm font-medium text-gray-700">Роль</label>
+    <SearchableSelect
+        options={roles}
+        value={localUser.role || ""}
+        onChange={(newValue) => handleChange({ target: { value: newValue } }, "role")}
+        placeholder="Выберите роль"
+        error={validationErrors.role}
+        formatOption={(option) => option}
+        searchBy={(option) => option.toLowerCase()}
+    />
+    {validationErrors.role && (
+        <p className="text-red-500 text-sm mt-1">{validationErrors.role}</p>
+    )}
+</div>
+
+
 
                         {/* New Password */}
                         <div>

@@ -3,9 +3,33 @@ import bcrypt from 'bcryptjs';
 
 export const getAllUsers = async (req, res) => {
     try {
-        const users = await User.findAll({
-            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status']
+        console.log('--- START getAllUsers ---');
+        console.log('Current user:', {
+            login: req.user.login,
+            role: req.user.role,
+            facultyId: req.user.facultyId
         });
+
+        let whereCondition = {};
+
+        if (req.user.facultyId) {
+            console.log('Applying faculty filter. FacultyID:', req.user.facultyId);
+            whereCondition.facultyId = req.user.facultyId;
+        }
+
+        console.log('Final whereCondition:', whereCondition);
+
+        const users = await User.findAll({
+            where: whereCondition,
+            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId']
+        });
+
+        console.log('Found users:', users.map(u => ({
+            login: u.login,
+            facultyId: u.facultyId
+        })));
+        console.log('--- END getAllUsers ---');
+
         res.json(users);
     } catch (error) {
         console.error("Error fetching users:", error);
@@ -13,12 +37,13 @@ export const getAllUsers = async (req, res) => {
     }
 };
 
+
 export const getUserByLogin = async (req, res) => {
     const { login } = req.params;
     try {
         const user = await User.findOne({
             where: { login: login },
-            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status']
+            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId']
         });
 
         if (!user) return res.status(404).json({ error: "User not found" });
@@ -27,11 +52,12 @@ export const getUserByLogin = async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 };
+
 export const getCurrentUser = async (req, res) => {
     try {
         const user = await User.findOne({
             where: { login: req.user.login },
-            attributes: { exclude: ['passwordHash', 'refreshToken'] } // Исключаем пароль и токен
+            attributes: { exclude: ['passwordHash', 'refreshToken'] }
         });
 
         if (!user) {
@@ -39,21 +65,17 @@ export const getCurrentUser = async (req, res) => {
             return res.status(404).json({ message: "Пользователь не найден" });
         }
 
-        console.log("Информация о пользователе:", user.toJSON()); // Логируем информацию о пользователе
-        
+        console.log("Информация о пользователе:", user.toJSON());
         res.json(user);
-
     } catch (error) {
         console.error("Ошибка сервера:", error);
         res.status(500).json({ message: "Ошибка сервера" });
     }
 };
 
-// ... существующие методы ...
-
 export const getPossibleStatuses = async (req, res) => {
     try {
-        console.log("Fetching possible statuses..."); // Логирование
+        console.log("Fetching possible statuses...");
         const statuses = User.rawAttributes.status.values;
         if (!statuses) {
             return res.status(404).json({ error: "Статусы не найдены" });
@@ -67,7 +89,7 @@ export const getPossibleStatuses = async (req, res) => {
 
 export const getPossibleRoles = async (req, res) => {
     try {
-        console.log("Fetching possible roles..."); // Логирование
+        console.log("Fetching possible roles...");
         const roles = User.rawAttributes.role.values;
         if (!roles) {
             return res.status(404).json({ error: "Роли не найдены" });
@@ -79,7 +101,6 @@ export const getPossibleRoles = async (req, res) => {
     }
 };
 
-// Удаление пользователя
 export const deleteUser = async (req, res) => {
     const { login } = req.params;
     try {
@@ -96,7 +117,6 @@ export const deleteUser = async (req, res) => {
     }
 };
 
-// Обновление данных пользователя
 export const updateUser = async (req, res) => {
     const { login } = req.params;
     const { email, lastName, firstName, patronymic, role, status, newPassword } = req.body;
@@ -107,7 +127,6 @@ export const updateUser = async (req, res) => {
             return res.status(404).json({ error: "Пользователь не найден" });
         }
 
-        // Если передан новый пароль, хешируем его
         let passwordHash = user.passwordHash;
         if (newPassword) {
             const saltRounds = 10;
@@ -121,6 +140,7 @@ export const updateUser = async (req, res) => {
             patronymic: patronymic || user.patronymic,
             role: role || user.role,
             status: status || user.status,
+            facultyId: req.user.facultyId || user.facultyId,
             passwordHash,
         });
 
@@ -131,29 +151,24 @@ export const updateUser = async (req, res) => {
     }
 };
 
-// Создание нового пользователя
 export const createUser = async (req, res) => {
     const { login, email, password, lastName, firstName, patronymic, role, status } = req.body;
 
-    console.log("Данные запроса:", req.body); // Логируем данные запроса
+    console.log("Данные запроса:", req.body);
 
     try {
-        // Проверяем, существует ли пользователь с таким логином
         const existingUser = await User.findOne({ where: { login } });
         if (existingUser) {
             return res.status(400).json({ error: "Пользователь с таким логином уже существует" });
         }
 
-        // Проверяем, передан ли пароль
         if (!password || typeof password !== "string") {
             return res.status(400).json({ error: "Пароль обязателен и должен быть строкой" });
         }
 
-        // Хешируем пароль
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(password, saltRounds);
 
-        // Создаем нового пользователя
         const newUser = await User.create({
             login,
             email,
@@ -163,6 +178,7 @@ export const createUser = async (req, res) => {
             patronymic,
             role: role || "Преподаватель",
             status: status || "Активный",
+            facultyId: req.user.facultyId || null // Устанавливаем факультет текущего пользователя
         });
 
         res.status(201).json({ message: "Пользователь создан", user: newUser });
@@ -172,65 +188,55 @@ export const createUser = async (req, res) => {
     }
 };
 
+
 export const getAllTeachers = async (req, res) => {
     console.log("Запрос на получение всех преподавателей начат.");
     try {
-        // Логируем начало выполнения запроса к базе данных
-        console.log("Попытка получить всех преподавателей из базы данных...");
+        let whereCondition = { role: "Преподаватель" };
 
-        // Получаем всех преподавателей без пагинации и сортировки
+        if (req.user.facultyId) {
+            console.log("Применяется фильтр по факультету:", req.user.facultyId);
+            whereCondition.facultyId = req.user.facultyId;
+        }
+
         const teachers = await User.findAll({
-            where: { role: "Преподаватель" },
-            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status']
+            where: whereCondition,
+            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId']
         });
 
-        // Логируем результат запроса
-        console.log(`Получено преподавателей: ${teachers.length}`);
-
-        // Если преподаватели не найдены, возвращаем пустой массив
         if (!teachers || teachers.length === 0) {
             console.log("Преподаватели не найдены.");
             return res.status(404).json({ error: "Преподаватели не найдены" });
         }
 
-        // Логируем успешное завершение запроса
         console.log("Запрос на получение всех преподавателей успешно завершен.");
-
-        // Возвращаем список преподавателей
         res.json(teachers);
     } catch (error) {
-        // Логируем ошибку
         console.error("Ошибка при получении преподавателей:", error);
         res.status(500).json({ error: "Ошибка сервера", details: error.message });
     }
 };
 
-// Добавляем новый метод в controllers/userController.js
+
 export const changePassword = async (req, res) => {
-    const { login } = req.user; // Получаем логин из аутентифицированного пользователя
+    const { login } = req.user;
     const { currentPassword, newPassword } = req.body;
 
     try {
-        // 1. Находим пользователя
         const user = await User.findOne({ where: { login } });
         if (!user) {
             return res.status(404).json({ error: "Пользователь не найден" });
         }
 
-        // 2. Проверяем текущий пароль
         const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
         if (!isPasswordValid) {
             return res.status(400).json({ error: "Текущий пароль неверен" });
         }
 
-        // 3. Хешируем новый пароль
         const saltRounds = 10;
         const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
 
-        // 4. Обновляем пароль
         await user.update({ passwordHash: newPasswordHash });
-
-        // 5. Возвращаем успешный ответ
         res.json({ message: "Пароль успешно изменен" });
     } catch (error) {
         console.error("Ошибка при смене пароля:", error);

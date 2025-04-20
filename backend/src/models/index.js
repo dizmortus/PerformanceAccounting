@@ -36,7 +36,13 @@ const Grade = gradeModel(sequelize, DataTypes);
 // Ассоциации
 Group.belongsTo(Specialty, { foreignKey: "specialtyId", as: "specialty" });
 Specialty.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
+// В разделе ассоциаций добавьте:
+Discipline.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
+User.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
 
+// И обратные связи:
+Faculty.hasMany(Discipline, { foreignKey: "facultyId", as: "disciplines" });
+Faculty.hasMany(User, { foreignKey: "facultyId", as: "users" });
 // Связи для Ведомости
 Statement.belongsTo(Discipline, { foreignKey: "disciplineId", as: "discipline" });
 Statement.belongsTo(Group, { foreignKey: "groupId", as: "group" });

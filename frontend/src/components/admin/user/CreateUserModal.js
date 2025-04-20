@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchPossibleStatuses, fetchPossibleRoles, createUser, checkUserByLogin } from "../utils/api";
-import ConfirmModal from './ConfirmModal';
-import WarningModal from './WarningModal';
+import { fetchPossibleStatuses, fetchPossibleRoles, createUser, checkUserByLogin } from "../../../utils/api";
+import ConfirmModal from '../../ConfirmModal';
+import WarningModal from '../../WarningModal';
+import SearchableSelect from '../SearchableSelect';
 
 const CreateUserModal = ({ onClose }) => {
     const [showPassword, setShowPassword] = useState(false);
@@ -90,6 +91,13 @@ const CreateUserModal = ({ onClose }) => {
                 setEmailError("");
             }
         }
+    };
+
+    const handleRoleChange = (selectedRole) => {
+        setLocalUser((prev) => ({
+            ...prev,
+            role: selectedRole,
+        }));
     };
 
     const handleBlockToggle = () => {
@@ -199,17 +207,14 @@ const CreateUserModal = ({ onClose }) => {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Роль</label>
-                            <select
+                            <SearchableSelect
+                                options={roles}
                                 value={localUser.role}
-                                onChange={(e) => handleChange(e, "role")}
-                                className="w-full px-2 py-1 border rounded-lg"
-                            >
-                                {roles.map((role) => (
-                                    <option key={role} value={role}>
-                                        {role}
-                                    </option>
-                                ))}
-                            </select>
+                                onChange={handleRoleChange}
+                                placeholder="Выберите роль"
+                                formatOption={(option) => option}
+                                searchBy={(option) => option.toLowerCase()}
+                            />
                         </div>
 
                         <div>
@@ -259,7 +264,6 @@ const CreateUserModal = ({ onClose }) => {
                     </div>
 
                     <div className="flex justify-end space-x-4 mt-6">
-
                         <button
                             className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
                             onClick={handleCreate}
@@ -294,4 +298,4 @@ const CreateUserModal = ({ onClose }) => {
     );
 };
 
-export default CreateUserModal;
+export default CreateUserModal; 

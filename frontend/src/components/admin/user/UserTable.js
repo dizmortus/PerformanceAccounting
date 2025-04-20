@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchAllUsers, fetchPossibleStatuses, fetchPossibleRoles } from "../utils/api";
+import { fetchAllUsers, fetchPossibleStatuses, fetchPossibleRoles } from "../../../utils/api";
 import EditUserModal from "./EditUserModal";
 import CreateUserModal from "./CreateUserModal";
 
@@ -107,6 +107,14 @@ const UserTable = ({ onCancel, currentUserLogin  }) => {
             content: content || "Нет данных"
         });
     };
+    const getColumnWidth = (columnName, baseWidth) => {
+        const extraWidthColumns = []; // Столбцы, которые могут быть шире
+        
+        if (sortColumn === columnName && extraWidthColumns.includes(columnName)) {
+            return `${parseInt(baseWidth) + 11}px`;
+        }
+        return baseWidth;
+    };
     return (
         <>
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-7xl bg-white p-6 rounded-lg shadow-lg flex flex-col" style={{ height: "calc(100vh - 2rem)", overflow: "hidden" }}>
@@ -117,18 +125,16 @@ const UserTable = ({ onCancel, currentUserLogin  }) => {
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="overflow-x-auto flex-1">
                         <table className="w-full text-sm text-gray-900 border-collapse table-fixed">
-                        <colgroup>{[
-    { width: '100px' }, // Логин
-    { width: '120px' }, // Фамилия
-    { width: '100px' }, // Имя
-    { width: '120px' }, // Отчество
-    { width: '180px' }, // Email
-    { width: '120px' }, // Роль
-    { width: '120px' }, // Статус
-    { width: '100px' }  // Действия
-  ].map((col, i) => (
-    <col key={i} style={{ width: col.width }} />
-  ))}</colgroup>
+                            <colgroup>
+                                <col style={{ width: getColumnWidth('login', '70px') }}/>
+                                <col style={{ width: getColumnWidth('lastName', '80px') }}/>
+                                <col style={{ width: getColumnWidth('firstName', '80px') }}/>
+                                <col style={{ width: getColumnWidth('patronymic', '80px') }}/>
+                                <col style={{ width: getColumnWidth('email', '120px') }}/>
+                                <col style={{ width: getColumnWidth('role', '80px') }}/>
+                                <col style={{ width: getColumnWidth('status', '90px') }}/>
+                                <col style={{ width: '85px' }}/>
+                            </colgroup>
                             <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
                                 <tr>
                                     <th 

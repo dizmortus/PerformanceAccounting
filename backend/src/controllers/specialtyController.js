@@ -24,3 +24,42 @@ export const getSpecialtyById = async (req, res) => {
     }
 };
 
+
+
+export const getAllSpecialties = async (req, res) => {
+    try {
+        console.log("Запрос на получение списка специальностей");
+
+        const whereClause = {};
+
+        // Если у пользователя есть привязка к факультету, фильтруем по нему
+        if (req.user.facultyId) {
+            console.log("Применяется фильтр по факультету:", req.user.facultyId);
+            whereClause.facultyId = req.user.facultyId;
+        }
+
+        const specialties = await Specialty.findAll({
+            attributes: [
+                "id",
+                "name",
+                "facultyId",
+                "coursesCount"
+            ],
+            where: whereClause,
+            order: [['name', 'ASC']] // Сортировка по названию
+        });
+
+        console.log("Полученные специальности:");
+        specialties.forEach((specialty, index) => {
+            console.log(`Специальность #${index + 1}:`, JSON.stringify(specialty, null, 2));
+        });
+
+        res.json(specialties);
+    } catch (error) {
+        console.error("Ошибка при получении списка специальностей:", error);
+        res.status(500).json({ 
+            error: "Ошибка сервера при получении списка специальностей",
+            details: error.message 
+        });
+    }
+};

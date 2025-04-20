@@ -24,20 +24,52 @@ export const login = async (req, res) => {
             return res.status(401).json({ error: 'Неверный логин или пароль' });
         }
 
-        // Генерация токенов
+        // Генерация токенов (добавляем facultyId)
         const accessToken = jwt.sign({ 
             login: user.login, 
             role: user.role,
-            status: user.status  // Добавляем статус
+            status: user.status,
+            facultyId: user.facultyId  // <- Добавлено
         }, ACCESS_SECRET, { expiresIn: '15m' });
+        
         const refreshToken = jwt.sign({ login: user.login }, REFRESH_SECRET, { expiresIn: '7d' });
 
-        // Обновляем refresh-токен в базе
         await User.update({ refreshToken }, { where: { login } });
-
         return res.json({ message: 'Успешный вход', accessToken, refreshToken });
     } catch (error) {
         return res.status(500).json({ error: 'Ошибка сервера' });
+    }
+};
+
+// 🔹 Обновление access-токена
+export const refreshToken = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) return res.status(401).json({ error: "Отсутствует refresh-токен" });
+
+        const user = await User.findOne({ where: { refreshToken } });
+        if (!user) return res.status(403).json({ error: "Недействительный refresh-токен" });
+
+        try {
+            jwt.verify(refreshToken, REFRESH_SECRET);
+        } catch (error) {
+            return res.status(403).json({ error: "Refresh-токен истек или недействителен" });
+        }
+
+        // Генерируем новый access-токен (добавляем facultyId)
+        const newAccessToken = jwt.sign(
+            { 
+                login: user.login, 
+                role: user.role,
+                facultyId: user.facultyId  // <- Добавлено
+            },
+            ACCESS_SECRET,
+            { expiresIn: '15m' }
+        );
+
+        res.json({ accessToken: newAccessToken });
+    } catch (error) {
+        res.status(500).json({ error: "Ошибка сервера" });
     }
 };
 
@@ -64,48 +96,6 @@ export const register = async (req, res) => {
         return res.status(201).json({ message: 'Регистрация успешна', accessToken, refreshToken });
     } catch (error) {
         return res.status(500).json({ error: 'Ошибка сервера' });
-    }
-};
-
-// 🔹 Обновление access-токена
-export const refreshToken = async (req, res) => {
-    try {
-        // Получаем refresh token из тела запроса
-        const { refreshToken } = req.body;
-
-        if (!refreshToken) {
-            console.error("❌ Ошибка 401: Отсутствует refresh-токен");
-            return res.status(401).json({ error: "Отсутствует refresh-токен" });
-        }
-
-        // Проверяем, есть ли такой refresh-токен в базе данных
-        const user = await User.findOne({ where: { refreshToken } });
-        if (!user) {
-            console.error("❌ Ошибка 403: Недействительный refresh-токен");
-            return res.status(403).json({ error: "Недействительный refresh-токен" });
-        }
-
-        // Проверяем refresh-токен
-        try {
-            jwt.verify(refreshToken, REFRESH_SECRET);
-        } catch (error) {
-            console.error("❌ Ошибка 403: Refresh-токен истек или недействителен", error.message);
-            return res.status(403).json({ error: "Refresh-токен истек или недействителен" });
-        }
-
-        // Генерируем новый access-токен
-        const newAccessToken = jwt.sign(
-            { login: user.login, role: user.role },
-            ACCESS_SECRET,
-            { expiresIn: '15m' }
-        );
-
-        // Возвращаем новый access-токен клиенту
-        res.json({ accessToken: newAccessToken });
-
-    } catch (error) {
-        console.error("❌ Ошибка сервера:", error);
-        res.status(500).json({ error: "Ошибка сервера" });
     }
 };
 

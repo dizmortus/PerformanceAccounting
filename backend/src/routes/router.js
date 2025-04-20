@@ -8,24 +8,71 @@ import {
     createStatement,
     updateStatement,
     deleteStatement,
-    calculateAverageGrades, // Импорт нового метода
-    countMissedLessons     // Импорт нового метода
+    calculateAverageGrades,
+    countMissedLessons,
+    getStatementByGroupDisciplineSemester
 } from "../controllers/statementController.js";
 
 import { verifyToken } from "../middleware/authMiddleware.js";
 
-import { getAllUsers, getUserByLogin, getCurrentUser, getPossibleStatuses, getPossibleRoles } from "../controllers/userController.js";
-import { getGroupById, getAllGroups } from "../controllers/groupController.js";
-import { getDisciplineById, getAllDisciplines } from "../controllers/disciplineController.js";
-import { getFacultyById } from "../controllers/facultyController.js";
-import { getSpecialtyById } from "../controllers/specialtyController.js";
-import { getStudentsByGroup } from "../controllers/studentController.js";
-import { setGrade, getPossibleGrades, getGrades, deleteGrade  } from "../controllers/gradeController.js";
-import { generateStatementDocument } from "../controllers/fileController.js";
-import { getStatementFile } from "../controllers/fileController.js";
-import { deleteUser, updateUser, createUser, getAllTeachers, changePassword } from "../controllers/userController.js";
+import { 
+    getAllUsers, 
+    getUserByLogin, 
+    getCurrentUser, 
+    getPossibleStatuses, 
+    getPossibleRoles,
+    deleteUser, 
+    updateUser, 
+    createUser, 
+    getAllTeachers, 
+    changePassword 
+} from "../controllers/userController.js";
 
-// Импорт контроллеров для занятий
+import { 
+    getGroupById, 
+    getAllGroups,
+    createGroup,
+    updateGroup,
+    deleteGroup,
+    hasGroupDependencies 
+} from '../controllers/groupController.js';
+
+import { 
+    getDisciplineById, 
+    getAllDisciplines 
+} from "../controllers/disciplineController.js";
+
+import { 
+    getFacultyById 
+} from "../controllers/facultyController.js";
+
+import { 
+    getSpecialtyById,
+    getAllSpecialties  // Добавлен импорт нового метода
+} from "../controllers/specialtyController.js";
+
+import {
+    getStudentsByGroup,
+    getAllStudents,
+    getStudentById,
+    createStudent,
+    updateStudent,
+    deleteStudent,
+    hasStudentDependencies
+} from "../controllers/studentController.js";
+
+import { 
+    setGrade, 
+    getPossibleGrades, 
+    getGrades, 
+    deleteGrade  
+} from "../controllers/gradeController.js";
+
+import { 
+    generateStatementDocument,
+    getStatementFile 
+} from "../controllers/fileController.js";
+
 import {
     getLessonsByStatement,
     createLesson,
@@ -46,9 +93,20 @@ router.post("/auth/register", register);
 router.post("/auth/logout", logout);
 router.post("/auth/refresh", refreshToken);
 
+// Students routes
+router.get("/students", verifyToken, getAllStudents);
+router.get("/students/:id", verifyToken, getStudentById);
+router.get("/groups/:groupId/students", verifyToken, getStudentsByGroup);
+router.post("/students", verifyToken, createStudent);
+router.put("/students/:id", verifyToken, updateStudent);
+router.delete("/students/:id", verifyToken, deleteStudent);
+router.get("/students/:studentId/has-dependencies", verifyToken, hasStudentDependencies);
+
 // Ведомости
 router.get("/statements/all", verifyToken, getAllStatements);
 router.get("/statements", verifyToken, getTeacherStatements);
+router.get('/statements/group/:groupId/discipline/:disciplineId/semester/:semester', 
+    getStatementByGroupDisciplineSemester);
 
 // Проверка наличия ведомостей у преподавателя
 router.get("/statements/has-statements/:teacherLogin", verifyToken, async (req, res) => {
@@ -62,16 +120,12 @@ router.get("/statements/has-statements/:teacherLogin", verifyToken, async (req, 
     }
 });
 
-// Создание новой ведомости
+// Создание, изменение, удаление ведомостей
 router.post("/statements", verifyToken, createStatement);
-
-// Изменение ведомости
 router.put("/statements/:id", verifyToken, updateStatement);
-
-// Удаление ведомости
 router.delete("/statements/:id", verifyToken, deleteStatement);
 
-// Новые маршруты для аналитики по ведомостям
+// Аналитика по ведомостям
 router.get("/statements/:statementId/average-grades", verifyToken, async (req, res) => {
     try {
         const { statementId } = req.params;
@@ -102,39 +156,46 @@ router.delete("/lessons/:id", verifyToken, deleteLesson);
 router.get("/teacher/lessons", verifyToken, getTeacherLessons);
 
 // Пользователи
-router.get("/users", getAllUsers);
+router.get("/users", verifyToken, getAllUsers);
 router.get("/users/:login", getUserByLogin);
 router.get("/me", verifyToken, getCurrentUser);
-router.delete("/users/:login", deleteUser);
-router.put("/users/:login", updateUser);
-router.post("/users", createUser);
-router.get("/users/all/teachers", getAllTeachers); 
-// Новый маршрут для смены пароля
+router.delete("/users/:login", verifyToken, deleteUser);
+router.put("/users/:login", verifyToken, updateUser);
+router.post("/users", verifyToken, createUser);
+router.get("/users/all/teachers", verifyToken, getAllTeachers);
 router.post('/users/change-password', verifyToken, changePassword);
 
 // Получение возможных статусов и ролей
 router.get("/users/statuses/possible-values", getPossibleStatuses);
 router.get("/users/roles/possible-values", getPossibleRoles);
-router.get("/disciplines", getAllDisciplines);
 
-// Получение данных по ID
-router.get("/groups/:id", getGroupById);
+// Дисциплины
+router.get("/disciplines", getAllDisciplines);
 router.get("/disciplines/:id", getDisciplineById);
-router.get("/faculties/:id", getFacultyById);
+
+// Группы
+router.get("/groups",verifyToken, getAllGroups);  // Получение всех групп
+router.get("/groups/:id", getGroupById);
+router.get("/groups/:groupId/students", getStudentsByGroup);
+router.post('/groups', verifyToken, createGroup);
+router.put('/groups/:id', verifyToken, updateGroup);
+router.delete('/groups/:id', verifyToken, deleteGroup);
+router.get("/groups/:groupId/has-dependencies", verifyToken, hasGroupDependencies);
+
+// Специальности
+router.get("/specialties",verifyToken, getAllSpecialties);  // Добавлен новый маршрут для всех специальностей
 router.get("/specialties/:id", getSpecialtyById);
 
-// Получение всех групп
-router.get("/groups", getAllGroups);
+// Факультеты
+router.get("/faculties/:id", getFacultyById);
 
-router.get("/groups/:groupId/students", getStudentsByGroup);
-// Универсальный маршрут для установки оценки
+// Оценки
 router.post("/grades/set", verifyToken, setGrade);
 router.get("/grades", verifyToken, getGrades);
 router.get("/grades/possible-values", getPossibleGrades);
-
 router.delete("/grades", deleteGrade);
 
-// Маршрут для генерации ведомости
+// Генерация ведомостей
 router.post("/statements/:statementId/generate", verifyToken, async (req, res) => {
     try {
         const { statementId } = req.params;
@@ -144,6 +205,7 @@ router.post("/statements/:statementId/generate", verifyToken, async (req, res) =
         res.status(500).json({ message: "Ошибка генерации ведомости", error: error.message });
     }
 });
+
 router.get("/statements/:statementId/file", verifyToken, getStatementFile);
 
 export default router;

@@ -4,17 +4,34 @@ import { Op } from "sequelize";
 import { Lesson, Grade, Student } from "../models/index.js";
 
 /**
- * Получение ведомостей преподавателя
+ * Получение ведомостей преподавателя (как основного, так и преподавателя занятий)
+ */
+/**
+ * Получение ведомостей преподавателя с учетом сложных условий
  */
 export const getTeacherStatements = async (req, res) => {
     try {
         const { login } = req.user;
+        const now = new Date();
+        const currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+        // Получаем все ведомости преподавателя (как основного, так и преподавателя занятий)
         const statements = await Statement.findAll({
-            where: { teacherLogin: login },
+            where: {
+                [Op.or]: [
+                    { teacherLogin: login },
+                    { classTeacherLogin: login }
+                ]
+            },
+            include: [{
+                model: Group,
+                as: 'group',
+                attributes: ['admissionYear']
+            }],
             attributes: [
                 "id",
                 "teacherLogin",
+                "classTeacherLogin",
                 "disciplineId",
                 "groupId",
                 "practiceHours",
@@ -27,7 +44,63 @@ export const getTeacherStatements = async (req, res) => {
             order: [['date', 'DESC']]
         });
 
-        res.json(statements);
+        // Функция для вычисления текущего семестра группы
+        const calculateCurrentSemester = (admissionYear) => {
+            const currentYear = now.getFullYear();
+            const month = now.getMonth() + 1; // 1-12
+            
+            let academicYearsPassed = currentYear - admissionYear;
+            
+            if (month >= 1 && month < 9) {
+                academicYearsPassed -= 1;
+            }
+            
+            const isFirstSemester = (month >= 9) || (month === 1 && now.getDate() <= 15);
+            const currentSemesterNumber = isFirstSemester ? 1 : 2;
+            
+            return (academicYearsPassed * 2) + currentSemesterNumber;
+        };
+
+        // Фильтруем ведомости по условиям
+        const filteredStatements = statements.filter(statement => {
+            const isMainTeacher = statement.teacherLogin === login;
+            const isClassTeacher = statement.classTeacherLogin === login;
+            const hasNoList = !statement.list || statement.list === '[]';
+            const isExamType = ['зачет', 'экзамен', 'дифференцированный зачет'].includes(statement.assessmentType);
+            const isPracticeType = ['практика', 'курсовой проект'].includes(statement.assessmentType);
+            
+            // Для основного преподавателя
+            if (isMainTeacher) {
+                if (isExamType) {
+                    // Для экзаменационных типов - проверяем дату
+                    if (statement.date) {
+                        const statementDate = new Date(statement.date);
+                        const normalizedStatementDate = new Date(
+                            statementDate.getFullYear(),
+                            statementDate.getMonth(),
+                            statementDate.getDate()
+                        );
+                        
+                        return normalizedStatementDate.getTime() === currentDate.getTime() && hasNoList;
+                    }
+                    return false;
+                } else if (isPracticeType) {
+                    // Для практик - проверяем семестр
+                    const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
+                    return currentSemester === statement.semester && hasNoList;
+                }
+            }
+            
+            // Для преподавателя занятий
+            if (isClassTeacher && isExamType) {
+                const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
+                return currentSemester === statement.semester && hasNoList;
+            }
+            
+            return false;
+        });
+
+        res.json(filteredStatements);
     } catch (error) {
         console.error("Ошибка при получении ведомостей:", error);
         res.status(500).json({ error: "Ошибка сервера" });
@@ -35,12 +108,17 @@ export const getTeacherStatements = async (req, res) => {
 };
 
 /**
- * Проверка наличия ведомостей у преподавателя
+ * Проверка наличия ведомостей у преподавателя (как основного, так и преподавателя занятий)
  */
 export const hasTeacherStatements = async (teacherLogin) => {
     try {
         const statements = await Statement.findOne({
-            where: { teacherLogin },
+            where: {
+                [Op.or]: [
+                    { teacherLogin },
+                    { classTeacherLogin: teacherLogin }
+                ]
+            },
             attributes: ["id", "date", "creditUnits"]
         });
 
@@ -50,7 +128,6 @@ export const hasTeacherStatements = async (teacherLogin) => {
         throw error;
     }
 };
-
 /**
  * Создание новой ведомости
  */
@@ -58,6 +135,7 @@ export const createStatement = async (req, res) => {
     try {
         const { 
             teacherLogin, 
+            classTeacherLogin,
             disciplineId, 
             groupId, 
             practiceHours, 
@@ -68,9 +146,20 @@ export const createStatement = async (req, res) => {
             list 
         } = req.body;
 
-        // Проверка обязательных полей
-        if (!teacherLogin || !disciplineId || !groupId || !practiceHours || 
-            !semester || !assessmentType || !creditUnits || !date) {
+        console.log("Получен запрос на создание ведомости:", req.body);
+
+        // Проверка обязательных полей (без date)
+        if (
+            !teacherLogin || 
+            !disciplineId || 
+            !groupId || 
+            !practiceHours || 
+            !semester || 
+            !assessmentType || 
+            creditUnits === undefined || 
+            creditUnits === null
+        ) {
+            console.warn("Некорректные или отсутствующие обязательные поля");
             return res.status(400).json({ 
                 error: "Все обязательные поля должны быть заполнены",
                 required: [
@@ -80,30 +169,33 @@ export const createStatement = async (req, res) => {
                     "practiceHours", 
                     "semester", 
                     "assessmentType",
-                    "creditUnits",
-                    "date"
+                    "creditUnits"
                 ]
             });
         }
 
-        // Проверка валидности даты
-        if (isNaN(new Date(date).getTime())) {
+        // Проверка валидности даты (если передана)
+        if (date && isNaN(new Date(date).getTime())) {
+            console.warn("Некорректная дата:", date);
             return res.status(400).json({ error: "Некорректная дата" });
         }
 
         // Проверка зачетных единиц
         if (creditUnits < 0) {
+            console.warn("Отрицательное количество зачетных единиц:", creditUnits);
             return res.status(400).json({ error: "Количество зачетных единиц не может быть отрицательным" });
         }
 
         // Получение ID специальности и факультета
         const group = await Group.findByPk(groupId);
         if (!group) {
+            console.warn("Группа не найдена:", groupId);
             return res.status(404).json({ error: "Группа не найдена" });
         }
 
         const specialty = await Specialty.findByPk(group.specialtyId);
         if (!specialty) {
+            console.warn("Специальность не найдена:", group.specialtyId);
             return res.status(404).json({ error: "Специальность не найдена" });
         }
 
@@ -135,22 +227,25 @@ export const createStatement = async (req, res) => {
         const newStatement = await Statement.create({
             id: newStatementId,
             teacherLogin,
+            classTeacherLogin: classTeacherLogin || null,
             disciplineId,
             groupId,
             practiceHours,
             semester,
             assessmentType,
             creditUnits,
-            date: new Date(date),
+            date: date ? new Date(date) : null,
             list: list || null,
         });
 
+        console.log("Ведомость успешно создана:", newStatement.id);
         res.status(201).json(newStatement);
     } catch (error) {
         console.error("Ошибка при создании ведомости:", error);
         res.status(500).json({ error: "Ошибка сервера" });
     }
 };
+
 
 /**
  * Изменение ведомости
@@ -160,6 +255,7 @@ export const updateStatement = async (req, res) => {
         const { id } = req.params;
         const { 
             teacherLogin, 
+            classTeacherLogin,
             disciplineId, 
             groupId, 
             practiceHours, 
@@ -182,6 +278,7 @@ export const updateStatement = async (req, res) => {
 
         // Обновление данных
         statement.teacherLogin = teacherLogin !== undefined ? teacherLogin : statement.teacherLogin;
+        statement.classTeacherLogin = classTeacherLogin !== undefined ? classTeacherLogin : statement.classTeacherLogin;
         statement.disciplineId = disciplineId !== undefined ? disciplineId : statement.disciplineId;
         statement.groupId = groupId !== undefined ? groupId : statement.groupId;
         statement.practiceHours = practiceHours !== undefined ? practiceHours : statement.practiceHours;
@@ -192,7 +289,6 @@ export const updateStatement = async (req, res) => {
         if (list !== undefined) {
             statement.list = list === "[]" ? null : list;
         }
-        
 
         await statement.save();
 
@@ -223,6 +319,7 @@ export const deleteStatement = async (req, res) => {
                 id: statement.id,
                 date: statement.date,
                 teacherLogin: statement.teacherLogin,
+                classTeacherLogin: statement.classTeacherLogin,
                 creditUnits: statement.creditUnits
             }
         });
@@ -241,6 +338,7 @@ export const getAllStatements = async (req, res) => {
             attributes: [
                 "id",
                 "teacherLogin",
+                "classTeacherLogin",
                 "disciplineId",
                 "groupId",
                 "practiceHours",
@@ -265,7 +363,6 @@ export const getAllStatements = async (req, res) => {
  * @param {number} statementId - ID ведомости
  * @returns {Promise<Object>} - Объект с studentId в качестве ключа и средней оценкой в качестве значения
  */
-// В методе calculateAverageGrades в statementController.js
 export const calculateAverageGrades = async (statementId) => {
     try {
         // Находим все занятия для данной ведомости
@@ -313,11 +410,9 @@ export const calculateAverageGrades = async (statementId) => {
         students.forEach(student => {
             const studentId = student.id;
             if (studentGrades[studentId] && studentGrades[studentId].length > 0) {
-                // Если есть оценки, считаем среднее
                 const sum = studentGrades[studentId].reduce((a, b) => a + b, 0);
                 averages[studentId] = sum / studentGrades[studentId].length;
             } else {
-                // Если оценок нет, возвращаем null (будет отображаться как '-')
                 averages[studentId] = null;
             }
         });
@@ -328,7 +423,6 @@ export const calculateAverageGrades = async (statementId) => {
         throw error;
     }
 };
-
 
 /**
  * Подсчитывает количество пропусков ("не явился") для каждого студента по всем занятиям ведомости
@@ -390,5 +484,74 @@ export const countMissedLessons = async (statementId) => {
     } catch (error) {
         console.error('Ошибка при подсчете пропусков:', error);
         throw error;
+    }
+};
+
+/**
+ * Поиск ведомости по группе, дисциплине и семестру
+ * @param {number} groupId - ID группы
+ * @param {number} disciplineId - ID дисциплины
+ * @param {number} semester - Номер семестра
+ * @returns {Promise<Statement|null>} - Найденная ведомость или null
+ */
+export const findStatementByGroupDisciplineSemester = async (groupId, disciplineId, semester) => {
+    try {
+        const statement = await Statement.findOne({
+            where: {
+                groupId,
+                disciplineId,
+                semester
+            },
+            attributes: [
+                "id",
+                "teacherLogin",
+                "classTeacherLogin",
+                "disciplineId",
+                "groupId",
+                "practiceHours",
+                "semester",
+                "assessmentType",
+                "creditUnits",
+                "date",
+                "list"
+            ]
+        });
+
+        return statement;
+    } catch (error) {
+        console.error("Ошибка при поиске ведомости:", error);
+        throw error;
+    }
+};
+
+/**
+ * Получение ведомости по группе, дисциплине и семестру (API endpoint)
+ */
+export const getStatementByGroupDisciplineSemester = async (req, res) => {
+    try {
+        const { groupId, disciplineId, semester } = req.params;
+
+        if (!groupId || !disciplineId || !semester) {
+            return res.status(400).json({ 
+                error: "Необходимо указать groupId, disciplineId и semester" 
+            });
+        }
+
+        const statement = await findStatementByGroupDisciplineSemester(
+            parseInt(groupId),
+            parseInt(disciplineId),
+            parseInt(semester)
+        );
+
+        if (!statement) {
+            return res.status(404).json({ 
+                error: "Ведомость не найдена" 
+            });
+        }
+
+        res.json(statement);
+    } catch (error) {
+        console.error("Ошибка при получении ведомости:", error);
+        res.status(500).json({ error: "Ошибка сервера" });
     }
 };

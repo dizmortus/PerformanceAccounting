@@ -1,10 +1,11 @@
-// components/SidebarAdminContent.js
-import { FaUsers, FaFileAlt, FaChevronRight } from 'react-icons/fa';
+import { FaUsers, FaFileAlt, FaUsersCog, FaUserGraduate, FaChevronRight } from 'react-icons/fa';
 
 const SidebarAdminContent = ({ selectedCategory, handleCategorySelect }) => {
     const categories = [
         { id: 'users', label: 'Пользователи', icon: <FaUsers /> },
         { id: 'statements', label: 'Ведомости', icon: <FaFileAlt /> },
+        { id: 'groups', label: 'Группы', icon: <FaUsersCog /> },
+        { id: 'students', label: 'Студенты', icon: <FaUserGraduate /> }, // New category
     ];
 
     return (

@@ -2,7 +2,7 @@
 import { useState } from 'react'; // Добавляем импорт useState
 import { useQuery } from '@tanstack/react-query';
 import { FaSearch, FaUsers, FaChevronRight } from 'react-icons/fa';
-import { fetchGroups } from '../utils/api';
+import { fetchGroups } from '../../utils/api';
 import GroupSearchModal from './GroupSearchModal';
 
 const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => {

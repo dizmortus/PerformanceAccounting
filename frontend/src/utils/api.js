@@ -532,22 +532,7 @@ export const fetchAllDisciplines = async () => {
     }
 };
 
-export const fetchAllGroups = async () => {
-    try {
-        const response = await fetchWithAuth("/api/groups");
 
-        if (!response.ok) {
-            throw new Error(`Ошибка запроса: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log("Полученные группы:", data);
-        return data;
-    } catch (error) {
-        console.error("Ошибка загрузки групп:", error);
-        return []; // Возвращаем пустой массив в случае ошибки
-    }
-};
 /**
  * Выполняет выход пользователя из системы.
  * @param {object} router - Объект роутера Next.js.
@@ -826,3 +811,401 @@ export const fetchAverageGrades = async (statementId) => {
         throw error;
     }
 }
+/**
+ * Получает ведомость по группе, дисциплине и семестру
+ * @param {number} groupId - ID группы
+ * @param {number} disciplineId - ID дисциплины
+ * @param {number} semester - Номер семестра
+ * @returns {Promise<Object>} - Объект ведомости
+ */
+export const fetchStatementByGroupDisciplineSemester = async (groupId, disciplineId, semester) => {
+    try {
+        const response = await fetchWithAuth(
+            `/api/statements/group/${groupId}/discipline/${disciplineId}/semester/${semester}`
+        );
+
+        if (!response.ok) {
+            // Если ведомость не найдена (404), возвращаем null
+            if (response.status === 404) {
+                return null;
+            }
+            throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+        }
+
+        const statement = await response.json();
+
+        // Проверяем корректность полученных данных
+        if (!statement || typeof statement !== 'object') {
+            throw new Error('Некорректный формат данных ведомости');
+        }
+
+        return statement;
+
+    } catch (error) {
+        console.error(
+            `Ошибка при получении ведомости для группы ${groupId}, ` +
+            `дисциплины ${disciplineId}, семестра ${semester}:`, 
+            error
+        );
+        throw error;
+    }
+};
+
+
+  /**
+   * Получает список всех специальностей с возможной фильтрацией по факультету
+   * @returns {Promise<Array>} - Массив объектов специальностей
+   */
+  export const fetchAllSpecialties = async () => {
+    try {
+      const response = await fetchWithAuth('/api/specialties');
+      
+      if (!response.ok) {
+        // Если нет данных (404), возвращаем пустой массив
+        if (response.status === 404) {
+          return [];
+        }
+        throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+      }
+  
+      const specialties = await response.json();
+      
+      // Проверяем корректность полученных данных
+      if (!Array.isArray(specialties)) {
+        throw new Error('Некорректный формат данных специальностей');
+      }
+  
+      // Сортируем по названию специальности
+      const sortedSpecialties = [...specialties].sort((a, b) => 
+        a.name.localeCompare(b.name)
+      );
+  
+      return sortedSpecialties;
+  
+    } catch (error) {
+      console.error('Ошибка при получении списка специальностей:', error);
+      throw error;
+    }
+  };
+  
+  export const fetchAllGroups = async () => {
+    try {
+        const response = await fetchWithAuth("/api/groups");
+
+        if (!response.ok) {
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("Полученные группы:", data);
+        return data;
+    } catch (error) {
+        console.error("Ошибка загрузки групп:", error);
+        return []; // Возвращаем пустой массив в случае ошибки
+    }
+};
+
+/**
+ * Создает новую группу
+ * @param {Object} groupData - Данные группы
+ * @param {number} groupData.specialtyId - ID специальности
+ * @param {number} groupData.admissionYear - Год поступления
+ * @param {string} groupData.educationForm - Форма обучения ('дневная', 'заочная', 'дистанционная')
+ * @param {number} groupData.educationLevel - Ступень обучения (1 или 2)
+ * @returns {Promise<Object>} - Созданная группа
+ */
+export const createGroup = async (groupData) => {
+    try {
+        const response = await fetchWithAuth('/api/groups', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(groupData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при создании группы');
+        }
+
+        const createdGroup = await response.json();
+        console.log('Группа успешно создана:', createdGroup);
+        return createdGroup;
+
+    } catch (error) {
+        console.error('Ошибка при создании группы:', error);
+        throw error;
+    }
+};
+
+/**
+ * Обновляет данные группы
+ * @param {number} groupId - ID группы для обновления
+ * @param {Object} updateData - Данные для обновления
+ * @param {number} [updateData.specialtyId] - ID специальности
+ * @param {number} [updateData.admissionYear] - Год поступления
+ * @param {string} [updateData.educationForm] - Форма обучения
+ * @param {number} [updateData.educationLevel] - Ступень обучения
+ * @returns {Promise<Object>} - Обновленная группа
+ */
+export const updateGroup = async (groupId, updateData) => {
+    try {
+        const response = await fetchWithAuth(`/api/groups/${groupId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при обновлении группы');
+        }
+
+        const updatedGroup = await response.json();
+        console.log('Группа успешно обновлена:', updatedGroup);
+        return updatedGroup;
+
+    } catch (error) {
+        console.error(`Ошибка при обновлении группы ${groupId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Удаляет группу
+ * @param {number} groupId - ID группы для удаления
+ * @returns {Promise<Object>} - Результат операции
+ */
+export const deleteGroup = async (groupId) => {
+    try {
+        const response = await fetchWithAuth(`/api/groups/${groupId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при удалении группы');
+        }
+
+        const result = await response.json();
+        console.log('Группа успешно удалена:', result);
+        return result;
+
+    } catch (error) {
+        console.error(`Ошибка при удалении группы ${groupId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Проверяет, есть ли у группы связанные зависимости (студенты, семестры и т.д.)
+ * @param {number} groupId - ID группы
+ * @returns {Promise<boolean>} - true, если есть зависимости; false, если нет
+ */
+export const hasGroupDependencies = async (groupId) => {
+    try {
+        const response = await fetchWithAuth(`/api/groups/${groupId}/has-dependencies`);
+
+        if (!response.ok) {
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
+
+        const { hasDependencies } = await response.json();
+        console.log(`Группа ${groupId} имеет зависимости:`, hasDependencies);
+        return hasDependencies;
+    } catch (error) {
+        console.error(`Ошибка при проверке зависимостей группы ${groupId}:`, error);
+        return true; // Возвращаем true по умолчанию, чтобы предотвратить удаление при ошибке
+    }
+};
+
+
+/**
+ * Получает список всех студентов с возможностью фильтрации
+ * @param {Object} [filters] - Параметры фильтрации
+ * @param {number} [filters.groupId] - ID группы для фильтрации
+ * @param {string} [filters.lastName] - Фамилия для поиска
+ * @param {number} [filters.page] - Номер страницы
+ * @param {number} [filters.limit] - Количество элементов на странице
+ * @returns {Promise<Object>} - Объект с данными студентов и пагинацией
+ */
+export const fetchAllStudents = async (filters = {}) => {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters.groupId) queryParams.append('groupId', filters.groupId);
+        if (filters.lastName) queryParams.append('lastName', filters.lastName);
+        if (filters.page) queryParams.append('page', filters.page);
+        if (filters.limit) queryParams.append('limit', filters.limit);
+
+        const response = await fetchWithAuth(`/api/students?${queryParams}`);
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при получении списка студентов');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error('Ошибка при получении списка студентов:', error);
+        throw error;
+    }
+};
+
+/**
+ * Получает данные конкретного студента
+ * @param {number} studentId - ID студента
+ * @returns {Promise<Object>} - Данные студента
+ */
+export const getStudentById = async (studentId) => {
+    try {
+        const response = await fetchWithAuth(`/api/students/${studentId}`);
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при получении данных студента');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(`Ошибка при получении студента ${studentId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Получает список студентов конкретной группы
+ * @param {number} groupId - ID группы
+ * @returns {Promise<Array>} - Массив студентов
+ */
+export const getStudentsByGroup = async (groupId) => {
+    try {
+        const response = await fetchWithAuth(`/api/groups/${groupId}/students`);
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при получении студентов группы');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(`Ошибка при получении студентов группы ${groupId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Создает нового студента
+ * @param {Object} studentData - Данные студента
+ * @param {string} studentData.lastName - Фамилия
+ * @param {string} studentData.firstName - Имя
+ * @param {string} [studentData.patronymic] - Отчество
+ * @param {number} studentData.groupId - ID группы
+ * @returns {Promise<Object>} - Созданный студент
+ */
+export const createStudent = async (studentData) => {
+    try {
+        const response = await fetchWithAuth('/api/students', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(studentData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при создании студента');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error('Ошибка при создании студента:', error);
+        throw error;
+    }
+};
+
+/**
+ * Обновляет данные студента
+ * @param {number} studentId - ID студента
+ * @param {Object} updateData - Данные для обновления
+ * @param {string} [updateData.lastName] - Фамилия
+ * @param {string} [updateData.firstName] - Имя
+ * @param {string} [updateData.patronymic] - Отчество
+ * @param {number} [updateData.groupId] - ID группы
+ * @returns {Promise<Object>} - Обновленный студент
+ */
+export const updateStudent = async (studentId, updateData) => {
+    try {
+        const response = await fetchWithAuth(`/api/students/${studentId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при обновлении студента');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(`Ошибка при обновлении студента ${studentId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Удаляет студента
+ * @param {number} studentId - ID студента
+ * @returns {Promise<Object>} - Результат операции
+ */
+export const deleteStudent = async (studentId) => {
+    try {
+        const response = await fetchWithAuth(`/api/students/${studentId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при удалении студента');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(`Ошибка при удалении студента ${studentId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Проверяет, есть ли у студента связанные зависимости (оценки, посещения и т.д.)
+ * @param {number} studentId - ID студента
+ * @returns {Promise<boolean>} - true, если есть зависимости; false, если нет
+ */
+export const hasStudentDependencies = async (studentId) => {
+    try {
+        const response = await fetchWithAuth(`/api/students/${studentId}/has-dependencies`);
+
+        if (!response.ok) {
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
+
+        const { hasDependencies } = await response.json();
+        console.log(`Студент ${studentId} имеет зависимости:`, hasDependencies);
+        return hasDependencies;
+    } catch (error) {
+        console.error(`Ошибка при проверке зависимостей студента ${studentId}:`, error);
+        return true; // Безопасный вариант - предполагаем, что зависимости есть
+    }
+};

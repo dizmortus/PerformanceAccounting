@@ -4,9 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkAuth } from '../../utils/auth';
 import { fetchTeacherStatements, fetchDisciplineName, handleLogout } from '../../utils/api';
-import SidebarTeacherContent from '../../components/SidebarTeacherContent';
+import SidebarTeacherContent from '../../components/teacher/SidebarTeacherContent';
 import Sidebar from '../../components/Sidebar';
-import StudentForm from '../../components/StudentForm';
+import StudentForm from '../../components/teacher/StudentForm';
 import UserProfile from '../../components/UserProfile';
 
 export default function TeacherDashboard() {
@@ -121,6 +121,7 @@ export default function TeacherDashboard() {
                         selectedGroup={selectedGroup}
                         filteredStatements={filteredStatements}
                         handleCancelSelection={handleCancelSelection}
+                        teacherLogin={authData.login} // Передаем логин преподавателя
                     />
                 )}
             </main>
@@ -134,5 +135,4 @@ export default function TeacherDashboard() {
             />
         </div>
     );
-    
 }
