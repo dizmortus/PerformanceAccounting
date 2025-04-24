@@ -220,66 +220,6 @@ export const downloadStatement = async (statementId) => {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
 };
-// // Отправка оценок
-// export const handleSubmitGrades = async (selectedStatementId, grades) => {
-//     try {
-//         const response = await fetchWithAuth(`/api/statements/${selectedStatementId}/grades`, {
-//             method: "POST",
-//             headers: {
-//                 "Content-Type": "application/json",
-//             },
-//             body: JSON.stringify(grades),
-//         });
-
-//         if (!response.ok) throw new Error("Ошибка при отправке оценок");
-
-//         const result = await response.json();
-//         return result;
-//     } catch (error) {
-//         console.error("Ошибка при отправке оценок:", error);
-//         throw error;
-//     }
-// };
-
-//  // Функция отправки оценок
-//  export const handleSubmitGrades = async (selectedStatementId, grades, students) => {
-//     const allGradesSelected = students.every(student => grades[student.id]);
-//     if (!allGradesSelected) {
-//         alert("Выберите оценки для всех студентов перед отправкой!");
-//         return;
-//     }
-
-//     const result = await submitGrades(selectedStatementId, grades);
-//     if (result.success) {
-//         alert("Оценки успешно загружены!");
-
-//         // Генерация ведомости
-//         try {
-//             const response = await fetch(`/api/statements/${selectedStatementId}/generate`, {
-//                 method: "POST",
-//                 headers: {
-//                     "Content-Type": "application/json",
-//                     Authorization: `Bearer ${localStorage.getItem("accessToken")}`,
-//                 },
-//             });
-
-//             if (!response.ok) throw new Error("Ошибка при генерации ведомости");
-
-//             // Показываем модальное окно об успешной генерации ведомости
-//             setIsSuccessModalOpen(true);
-//         } catch (pdfError) {
-//             console.error("Ошибка при создании ведомости:", pdfError);
-//             alert("Оценки сохранены, но произошла ошибка при создании ведомости.");
-//         }
-//     } else {
-//         console.error("Ошибка при отправке оценок:", result.error);
-//         alert("Ошибка при загрузке оценок.");
-//     }
-// };
-
-
-
-// utils/api.js
 
 export const fetchAllUsers = async () => {
     try {
@@ -1207,5 +1147,166 @@ export const hasStudentDependencies = async (studentId) => {
     } catch (error) {
         console.error(`Ошибка при проверке зависимостей студента ${studentId}:`, error);
         return true; // Безопасный вариант - предполагаем, что зависимости есть
+    }
+};
+
+
+/**
+ * Получает дисциплину по ID
+ * @param {number} disciplineId - ID дисциплины
+ * @returns {Promise<Object>} - Данные дисциплины
+ */
+export const getDisciplineById = async (disciplineId) => {
+    try {
+        const response = await fetchWithAuth(`/api/disciplines/${disciplineId}`);
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Дисциплина не найдена');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(`Ошибка при получении дисциплины ${disciplineId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Создает новую дисциплину
+ * @param {Object} disciplineData - Данные дисциплины
+ * @param {string} disciplineData.name - Название
+ * @param {number} disciplineData.facultyId - ID факультета
+ * @param {boolean} [disciplineData.isPractice=false] - Является ли практикой
+ * @returns {Promise<Object>} - Созданная дисциплина
+ */
+export const createDiscipline = async (disciplineData) => {
+    try {
+        const response = await fetchWithAuth('/api/disciplines', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(disciplineData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при создании дисциплины');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error('Ошибка при создании дисциплины:', error);
+        throw error;
+    }
+};
+
+export const updateDiscipline = async (disciplineId, updateData) => {
+    try {
+        const response = await fetchWithAuth(`/api/disciplines/${disciplineId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updateData)
+        });
+  
+        const contentType = response.headers.get('content-type');
+        
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Expected JSON but got: ${text.substring(0, 100)}`);
+        }
+  
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Ошибка при обновлении дисциплины');
+        }
+  
+        return data;
+  
+    } catch (error) {
+        console.error(`Ошибка при обновлении дисциплины ${disciplineId}:`, error);
+        throw error;
+    }
+  };
+
+/**
+ * Удаляет дисциплину
+ * @param {number} disciplineId - ID дисциплины
+ * @returns {Promise<Object>} - Результат операции
+ */
+export const deleteDiscipline = async (disciplineId) => {
+    try {
+        const response = await fetchWithAuth(`/api/disciplines/${disciplineId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при удалении дисциплины');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(`Ошибка при удалении дисциплины ${disciplineId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Проверяет, есть ли у дисциплины связанные зависимости (оценки и т.д.)
+ * @param {number} disciplineId - ID дисциплины
+ * @returns {Promise<boolean>} - true, если есть зависимости; false, если нет
+ */
+export const hasDisciplineDependencies = async (disciplineId) => {
+    try {
+        const response = await fetchWithAuth(`/api/disciplines/${disciplineId}/has-dependencies`);
+
+        if (!response.ok) {
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
+
+        const { hasDependencies } = await response.json();
+        console.log(`Дисциплина ${disciplineId} имеет зависимости:`, hasDependencies);
+        return hasDependencies;
+    } catch (error) {
+        console.error(`Ошибка при проверке зависимостей дисциплины ${disciplineId}:`, error);
+        return true; // Безопасный вариант - предполагаем, что зависимости есть
+    }
+};
+
+/**
+ * Получает статистику по ведомости
+ * @param {number} statementId - ID ведомости
+ * @returns {Promise<Object>} - Статистика ведомости
+ */
+export const getStatementStatistics = async (statementId) => {
+    try {
+        const response = await fetchWithAuth(`/api/statements/${statementId}/statistics`);
+
+        const contentType = response.headers.get('content-type');
+        
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Expected JSON but got: ${text.substring(0, 100)}`);
+        }
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Ошибка при получении статистики ведомости');
+        }
+
+        return data;
+
+    } catch (error) {
+        console.error(`Ошибка при получении статистики ведомости ${statementId}:`, error);
+        throw error;
     }
 };

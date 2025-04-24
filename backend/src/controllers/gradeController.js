@@ -43,7 +43,7 @@ export const getGrades = async (req, res) => {
       attributes: ["id", "value", "studentId"],
       raw: true // Возвращаем простые объекты вместо экземпляров модели
     });
-
+    console.log('Возвращено:',grades);
     res.status(200).json({
       entityType: statementId ? "statement" : "lesson",
       grades

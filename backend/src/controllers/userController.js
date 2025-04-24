@@ -1,5 +1,7 @@
 import { User } from "../models/index.js";
 import bcrypt from 'bcryptjs';
+import sequelize from '../config/db.js'; 
+import { Faculty } from "../models/index.js"; // путь скорректируйте под ваш проект
 
 export const getAllUsers = async (req, res) => {
     try {
@@ -115,41 +117,89 @@ export const deleteUser = async (req, res) => {
         console.error("Ошибка при удалении пользователя:", error);
         res.status(500).json({ error: "Ошибка сервера", details: error.message });
     }
-};
-
+};// Обновленный обработчик для PUT /api/users/:oldLogin
 export const updateUser = async (req, res) => {
-    const { login } = req.params;
-    const { email, lastName, firstName, patronymic, role, status, newPassword } = req.body;
+    const { oldLogin } = req.body;
+    const { login: newLogin, email, lastName, firstName, patronymic, role, status, facultyId } = req.body;
 
     try {
-        const user = await User.findOne({ where: { login } });
+        // 1. Проверяем наличие пользователя
+        const user = await User.findOne({ where: { 'Логин': oldLogin } });
         if (!user) {
-            return res.status(404).json({ error: "Пользователь не найден" });
+            return res.status(404).json({ success: false, error: "Пользователь не найден" });
         }
 
-        let passwordHash = user.passwordHash;
-        if (newPassword) {
-            const saltRounds = 10;
-            passwordHash = await bcrypt.hash(newPassword, saltRounds);
+        // 2. Проверяем, не занят ли новый логин
+        if (newLogin && newLogin !== oldLogin) {
+            const existingUser = await User.findOne({ where: { 'Логин': newLogin } });
+            if (existingUser) {
+                return res.status(400).json({ success: false, error: "Пользователь с таким логином уже существует" });
+            }
         }
 
-        await user.update({
-            email: email || user.email,
-            lastName: lastName || user.lastName,
-            firstName: firstName || user.firstName,
-            patronymic: patronymic || user.patronymic,
-            role: role || user.role,
-            status: status || user.status,
-            facultyId: req.user.facultyId || user.facultyId,
-            passwordHash,
+        // 3. Проверка факультета
+        if (facultyId) {
+            const faculty = await Faculty.findByPk(facultyId);
+            if (!faculty) {
+                return res.status(404).json({ success: false, error: "Факультет не найден" });
+            }
+        }
+
+        // 4. Обновление данных
+        if (newLogin === oldLogin) {
+            // Логин не меняется — обычное обновление
+            await user.update({
+                'Почта': email,
+                'Фамилия': lastName,
+                'Имя': firstName,
+                'Отчество': patronymic || null,
+                'Роль': role,
+                'Статус': status,
+                'ID Факультета': facultyId
+            });
+        } else {
+            // Логин меняется — обновляем через raw query
+            await User.sequelize.query(
+                'UPDATE "Пользователи" SET "Логин" = ?, "Почта" = ?, "Фамилия" = ?, "Имя" = ?, "Отчество" = ?, "Роль" = ?, "Статус" = ?, "ID Факультета" = ? WHERE "Логин" = ?',
+                {
+                    replacements: [newLogin, email, lastName, firstName, patronymic || null, role, status, facultyId, oldLogin],
+                    type: User.sequelize.QueryTypes.UPDATE
+                }
+            );
+        }
+
+        // 5. Возвращаем обновлённые данные
+        const updatedUser = await User.findOne({
+            where: { 'Логин': newLogin || oldLogin },
+            attributes: [
+                ['Логин', 'login'],
+                ['Почта', 'email'],
+                ['Фамилия', 'lastName'],
+                ['Имя', 'firstName'],
+                ['Отчество', 'patronymic'],
+                ['Роль', 'role'],
+                ['Статус', 'status'],
+                ['ID Факультета', 'facultyId']
+            ],
+            raw: true
         });
 
-        res.json({ message: "Данные пользователя обновлены" });
+        res.json({
+            success: true,
+            message: "Данные пользователя успешно обновлены",
+            user: updatedUser
+        });
+
     } catch (error) {
         console.error("Ошибка при обновлении пользователя:", error);
-        res.status(500).json({ error: "Ошибка сервера", details: error.message });
+        res.status(500).json({
+            success: false,
+            error: "Ошибка сервера при обновлении пользователя",
+            details: error.message
+        });
     }
 };
+
 
 export const createUser = async (req, res) => {
     const { login, email, password, lastName, firstName, patronymic, role, status } = req.body;

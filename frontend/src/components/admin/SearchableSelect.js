@@ -7,6 +7,7 @@ const SearchableSelect = ({
     placeholder, 
     error, 
     disabled,
+    fontSize = "base", // Новый пропс с default значением 'base'
     formatOption = (option) => option.toString(),
     searchBy = (option) => formatOption(option).toLowerCase(),
     getOptionValue = (option) => option.id || option.value || option.login || option
@@ -29,10 +30,8 @@ const SearchableSelect = ({
         setSearchTerm("");
     };
     
-    // Generate a stable key for each option
     const getOptionKey = (option, index) => {
         const value = getOptionValue(option);
-        // For objects, try to use a unique identifier, fallback to index
         return typeof value === 'object' ? 
             JSON.stringify(value) || index : 
             value || index;
@@ -55,7 +54,9 @@ const SearchableSelect = ({
                     onBlur={() => setTimeout(() => setIsOpen(false), 200)}
                     placeholder={placeholder}
                     disabled={disabled}
-                    className={`w-full px-2 py-1 border rounded-lg ${error ? "border-red-500" : "border-gray-300"}`}
+                    className={`w-full px-2 py-1 border rounded-lg ${
+                        error ? "border-red-500" : "border-gray-300"
+                    } text-${fontSize}`} // Применяем fontSize
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
                     <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -65,7 +66,7 @@ const SearchableSelect = ({
             </div>
             
             {isOpen && (
-                <div className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none">
+                <div className={`absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none text-${fontSize}`}>
                     {filteredOptions.length === 0 ? (
                         <div className="px-4 py-2 text-gray-500">Ничего не найдено</div>
                     ) : (
@@ -83,7 +84,7 @@ const SearchableSelect = ({
             )}
             
             {error && (
-                <p className="text-red-500 text-sm mt-1">{error}</p>
+                <p className={`text-red-500 text-${fontSize} mt-1`}>{error}</p>
             )}
         </div>
     );

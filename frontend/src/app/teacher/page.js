@@ -1,9 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState,useMemo , useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkAuth } from '../../utils/auth';
-import { fetchTeacherStatements, fetchDisciplineName, handleLogout } from '../../utils/api';
+import { fetchTeacherStatements, handleLogout } from '../../utils/api';
 import SidebarTeacherContent from '../../components/teacher/SidebarTeacherContent';
 import Sidebar from '../../components/Sidebar';
 import StudentForm from '../../components/teacher/StudentForm';
@@ -25,7 +25,7 @@ export default function TeacherDashboard() {
         staleTime: 30 * 60 * 1000, // 30 минут кэширования
     });
 
-    // Загрузка ведомостей с кэшированием
+    // Загрузка ведомостей с кэшированием (теперь включая названия дисциплин)
     const { data: statements = [] } = useQuery({
         queryKey: ['teacherStatements'],
         queryFn: fetchTeacherStatements,
@@ -51,26 +51,11 @@ export default function TeacherDashboard() {
         }
     }, [authData?.isAuthenticated]);
 
-    // Загрузка названий дисциплин с кэшированием
-    const { data: filteredStatements = [] } = useQuery({
-        queryKey: ['filteredStatements', selectedGroup, statements],
-        queryFn: async () => {
-            if (!selectedGroup || !statements.length) return [];
-            
-            const filtered = statements.filter(statement => statement.groupId === selectedGroup);
-            return Promise.all(
-                filtered.map(async (statement) => ({
-                    ...statement,
-                    disciplineName: (await queryClient.fetchQuery({
-                        queryKey: ['disciplineName', statement.disciplineId],
-                        queryFn: () => fetchDisciplineName(statement.disciplineId),
-                        staleTime: Infinity // Названия дисциплин редко меняются
-                    })).name,
-                }))
-            );
-        },
-        enabled: !!selectedGroup && !!statements.length,
-    });
+    // Фильтрация ведомостей по выбранной группе (теперь без дополнительных запросов)
+    const filteredStatements = useMemo(() => {
+        if (!selectedGroup || !statements.length) return [];
+        return statements.filter(statement => statement.groupId === selectedGroup);
+    }, [selectedGroup, statements]);
 
     // Восстановление выбранной группы при загрузке
     useEffect(() => {
@@ -113,9 +98,10 @@ export default function TeacherDashboard() {
     
             <main className="flex-1 bg-opacity-50 relative flex items-center justify-center">
                 {!selectedGroup ? (
-                    <div className="text-2xl font-semibold text-white bg-transparent p-6 rounded-lg">
-                        Пожалуйста, выберите группу...
-                    </div>
+  <div className="text-2xl font-semibold text-black bg-white p-6 rounded-lg shadow-md">
+  Пожалуйста, выберите группу...
+</div>
+
                 ) : (
                     <StudentForm
                         selectedGroup={selectedGroup}

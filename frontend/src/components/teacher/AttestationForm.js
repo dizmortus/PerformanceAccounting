@@ -1,7 +1,7 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo  } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { submitGrades, generateStatement, fetchAverageGrades, fetchMissedLessonsCount } from '../../utils/api';
+import { submitGrades, generateStatement, fetchAverageGrades, fetchMissedLessonsCount, fetchGrades } from '../../utils/api';
 
 const AttestationForm = ({
   selectedStatementId,
@@ -12,17 +12,26 @@ const AttestationForm = ({
   onShowWarning,
   onShowSuccess
 }) => {
+
+  
   const queryClient = useQueryClient();
   const [gradesMap, setGradesMap] = useState(new Map());
   const [changedGradesMap, setChangedGradesMap] = useState(new Map());
   const [focusedStudentIndices, setFocusedStudentIndices] = useState(new Map());
   const listRef = useRef(null);
-
+// В начале компонента (после state-хуков)
+const [originalGradesMap, setOriginalGradesMap] = useState(new Map());
   // Получение текущих значений для выбранной ведомости
   const getCurrentGrades = useCallback(() => {
     return gradesMap.get(selectedStatementId) || {};
   }, [gradesMap, selectedStatementId]);
 
+  const generateStatementMutation = useMutation({
+    mutationFn: generateStatement,
+    onSuccess: () => {
+      onShowSuccess("Ведомость успешно сформирована!");
+    }
+  });
   const getCurrentChangedGrades = useCallback(() => {
     return changedGradesMap.get(selectedStatementId) || {};
   }, [changedGradesMap, selectedStatementId]);
@@ -30,6 +39,184 @@ const AttestationForm = ({
   const getCurrentFocusedIndex = useCallback(() => {
     return focusedStudentIndices.get(selectedStatementId) || 0;
   }, [focusedStudentIndices, selectedStatementId]);
+
+  // Мутации для изменения данных
+  const submitGradesMutation = useMutation({
+    mutationFn: submitGrades,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['attestationAnalytics']);
+    }
+  });
+// Получаем текущие оригинальные оценки
+const originalGrades = useMemo(
+  () => originalGradesMap.get(selectedStatementId) || {},
+  [originalGradesMap, selectedStatementId]
+);
+const fetchGradesData = async (statementId, students) => {
+  console.log('Starting grades fetch with statementId:', statementId, 'and students:', students);
+  try {
+    const studentIds = students.map(student => student.id);
+    console.log('Fetching grades for student IDs:', studentIds);
+    const result = await fetchGrades({
+      statementId,
+      studentIds
+    });
+    console.log('Grades API response:', result);
+    return result;
+  } catch (error) {
+    console.error('Error fetching grades:', error);
+    throw error;
+  }
+};
+
+const { data: gradesData, isLoading: loadingGrades, error: gradesError } = useQuery({
+  queryKey: ['attestationGrades', selectedStatementId, students],
+  queryFn: () => fetchGradesData(selectedStatementId, students),
+  enabled: !!selectedStatementId && students.length > 0,
+  staleTime: 60 * 1000, // 1 minute stale time
+});
+
+// Обработка успешного получения данных
+useEffect(() => {
+  if (!gradesData || !selectedStatementId) return;
+
+  console.log('Processing grades data:', gradesData);
+
+  const gradesArray = gradesData.grades || [];
+  const gradesByStudentId = {};
+  const originalGradesByStudentId = {};
+
+  gradesArray.forEach(({ studentId, value }) => {
+    gradesByStudentId[studentId] = value;
+    originalGradesByStudentId[studentId] = value;
+  });
+
+  const initialGrades = {};
+  const initialOriginalGrades = {};
+
+  students.forEach(student => {
+    initialGrades[student.id] = gradesByStudentId[student.id] || "";
+    initialOriginalGrades[student.id] = originalGradesByStudentId[student.id] || "";
+  });
+
+  // Загружаем сохраненные локально изменения
+  const savedGrades = JSON.parse(
+    localStorage.getItem(`grades_${selectedStatementId}`) || '{}'
+  );
+
+  const mergedGrades = { ...initialGrades };
+  const newChangedGrades = {};
+
+  Object.keys(savedGrades).forEach(studentId => {
+    if (savedGrades[studentId] !== initialOriginalGrades[studentId]) {
+      mergedGrades[studentId] = savedGrades[studentId];
+      newChangedGrades[studentId] = true;
+    }
+  });
+
+  setGradesMap(prev => new Map(prev).set(selectedStatementId, mergedGrades));
+  setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, initialOriginalGrades));
+  setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, newChangedGrades));
+
+  console.log('Grades processing completed for statement:', selectedStatementId);
+}, [gradesData, selectedStatementId, students]);
+
+// Обработка ошибок
+useEffect(() => {
+  if (gradesError) {
+    console.error('Error in grades query:', gradesError);
+    // Можно добавить обработку ошибки (например, показать уведомление)
+  }
+}, [gradesError]);
+
+
+
+// Функция сохранения в localStorage
+const saveGradesToLocalStorage = (statementId, grades) => {
+  localStorage.setItem(`grades_${statementId}`, JSON.stringify(grades));
+};
+
+// Обновленный обработчик изменения оценки
+const handleGradeChange = useCallback((studentId, value) => {
+  const newGrades = { ...getCurrentGrades(), [studentId]: value };
+  
+  // Сохраняем в state и localStorage
+  setGradesMap(prev => new Map(prev).set(selectedStatementId, newGrades));
+  saveGradesToLocalStorage(selectedStatementId, newGrades);
+  
+  // Обновляем changedGradesMap
+  setChangedGradesMap(prev => {
+    const currentChangedGrades = prev.get(selectedStatementId) || {};
+    const newChangedGrades = { ...currentChangedGrades };
+    
+    if (originalGrades[studentId] !== value) {
+      newChangedGrades[studentId] = true;
+    } else {
+      delete newChangedGrades[studentId];
+    }
+    
+    return new Map(prev).set(selectedStatementId, newChangedGrades);
+  });
+}, [selectedStatementId, getCurrentGrades, originalGrades]);
+
+// Обновленный обработчик отмены
+const handleCancel = useCallback(() => {
+  const currentChangedGrades = getCurrentChangedGrades();
+  if (Object.keys(currentChangedGrades).length > 0) {
+    // Восстанавливаем оригинальные оценки
+    setGradesMap(prev => new Map(prev).set(selectedStatementId, originalGrades));
+    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
+    
+    // Удаляем из localStorage
+    localStorage.removeItem(`grades_${selectedStatementId}`);
+  } else {
+    handleCancelSelection();
+  }
+}, [selectedStatementId, originalGrades, handleCancelSelection, getCurrentChangedGrades]);
+
+// Обновленный обработчик сохранения
+const handleSubmit = useCallback(async () => {
+  const currentGrades = getCurrentGrades();
+  const filledGrades = {};
+  
+  Object.entries(currentGrades).forEach(([studentId, grade]) => {
+    if (grade !== "") {
+      filledGrades[studentId] = grade;
+    }
+  });
+
+  try {
+    await submitGradesMutation.mutateAsync({
+      statementId: selectedStatementId,
+      grades: filledGrades
+    });
+
+    // После успешного сохранения обновляем оригинальные оценки
+    setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, currentGrades));
+    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
+    
+    // Удаляем из localStorage
+    localStorage.removeItem(`grades_${selectedStatementId}`);
+
+    const allGradesFilled = students.every(student => currentGrades[student.id]);
+    
+    if (allGradesFilled) {
+      onOpenConfirm(
+        async () => {
+          await generateStatementMutation.mutateAsync(selectedStatementId);
+          onShowSuccess("Оценки сохранены и ведомость сформирована!");
+        },
+        "Подтвердите создание ведомости",
+        "Все оценки заполнены. Создать ведомость?",
+        true
+      );
+    }
+  } catch (error) {
+    console.error("Ошибка при сохранении оценок:", error);
+    onShowWarning(`Ошибка: ${error.message}`);
+  }
+}, [getCurrentGrades, students, selectedStatementId, onOpenConfirm, onShowWarning, onShowSuccess, submitGradesMutation, generateStatementMutation]);
+  
 
   // Запросы аналитики с React Query
   const { data: analytics, isLoading: loadingAnalytics } = useQuery({
@@ -45,86 +232,9 @@ const AttestationForm = ({
     staleTime: 5 * 60 * 1000,
   });
 
-  // Мутации для изменения данных
-  const submitGradesMutation = useMutation({
-    mutationFn: submitGrades,
-    onSuccess: () => {
-      queryClient.invalidateQueries(['attestationAnalytics']);
-    }
-  });
+  
 
-  const generateStatementMutation = useMutation({
-    mutationFn: generateStatement
-  });
 
-  // Инициализация оценок
-  useEffect(() => {
-    if (!selectedStatementId) return;
-
-    const initialGrades = {};
-    const initialChanges = {};
-    
-    students.forEach(student => {
-      initialGrades[student.id] = "";
-    });
-
-    // Загрузка из localStorage
-    const savedGrades = localStorage.getItem(`grades_${selectedStatementId}`);
-    const savedChanges = localStorage.getItem(`changes_${selectedStatementId}`);
-    
-    if (savedGrades) {
-      try {
-        const parsedGrades = JSON.parse(savedGrades);
-        
-        // Преобразуем объекты оценок в простые строки
-        Object.keys(parsedGrades).forEach(studentId => {
-          if (parsedGrades[studentId] && typeof parsedGrades[studentId] === 'object') {
-            const gradeValues = Object.values(parsedGrades[studentId]).filter(g => g !== "");
-            initialGrades[studentId] = gradeValues.length > 0 ? gradeValues[0] : "";
-          } else {
-            initialGrades[studentId] = parsedGrades[studentId] || "";
-          }
-        });
-
-        if (savedChanges) {
-          const parsedChanges = JSON.parse(savedChanges);
-          setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, parsedChanges));
-        } else {
-          // Инициализируем changedGrades на основе сохраненных оценок
-          Object.entries(initialGrades).forEach(([studentId, grade]) => {
-            if (grade !== "") {
-              initialChanges[studentId] = true;
-            }
-          });
-          setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, initialChanges));
-        }
-      } catch (e) {
-        console.error("Ошибка при загрузке оценок из localStorage:", e);
-      }
-    }
-
-    setGradesMap(prev => new Map(prev).set(selectedStatementId, initialGrades));
-    localStorage.setItem(`grades_${selectedStatementId}`, JSON.stringify(initialGrades));
-    if (Object.keys(initialChanges).length > 0) {
-      localStorage.setItem(`changes_${selectedStatementId}`, JSON.stringify(initialChanges));
-    }
-  }, [selectedStatementId, students]);
-
-  const handleGradeChange = useCallback((studentId, value) => {
-    const newGrades = { ...getCurrentGrades(), [studentId]: value };
-    setGradesMap(prev => new Map(prev).set(selectedStatementId, newGrades));
-    
-    const newChangedGrades = { ...getCurrentChangedGrades() };
-    if (value !== "") {
-      newChangedGrades[studentId] = true;
-    } else {
-      delete newChangedGrades[studentId];
-    }
-    
-    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, newChangedGrades));
-    localStorage.setItem(`grades_${selectedStatementId}`, JSON.stringify(newGrades));
-    localStorage.setItem(`changes_${selectedStatementId}`, JSON.stringify(newChangedGrades));
-  }, [selectedStatementId, getCurrentGrades, getCurrentChangedGrades]);
 
   const handleSetGrade = useCallback((gradeValue) => {
     if (students.length === 0) return;
@@ -134,63 +244,6 @@ const AttestationForm = ({
       handleGradeChange(studentId, gradeValue);
     }
   }, [students, getCurrentFocusedIndex, handleGradeChange]);
-
-  const handleCancel = useCallback(() => {
-    const currentChangedGrades = getCurrentChangedGrades();
-    if (Object.keys(currentChangedGrades).length > 0) {
-      const resetGrades = {};
-      students.forEach(student => {
-        resetGrades[student.id] = "";
-      });
-      
-      setGradesMap(prev => new Map(prev).set(selectedStatementId, resetGrades));
-      setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
-      localStorage.setItem(`grades_${selectedStatementId}`, JSON.stringify(resetGrades));
-      localStorage.removeItem(`changes_${selectedStatementId}`);
-    } else {
-      handleCancelSelection();
-    }
-  }, [selectedStatementId, students, handleCancelSelection, getCurrentChangedGrades]);
-
-  const handleSubmit = useCallback(() => {
-    const currentGrades = getCurrentGrades();
-    const hasEmptyGrades = students.some(student => !currentGrades[student.id]);
-    if (hasEmptyGrades) {
-      onShowWarning("Выберите оценки для всех студентов перед отправкой ведомости!");
-      return;
-    }
-    
-    onOpenConfirm(
-      async () => {
-        try {
-          const filledGrades = {};
-          Object.entries(currentGrades).forEach(([studentId, grade]) => {
-            if (grade !== "") {
-              filledGrades[studentId] = grade;
-            }
-          });
-          
-          await submitGradesMutation.mutateAsync({
-            statementId: selectedStatementId,
-            grades: filledGrades
-          });
-
-          await generateStatementMutation.mutateAsync(selectedStatementId);
-          onShowSuccess("Ведомость успешно сохранена и сформирована!");
-          
-          localStorage.removeItem(`grades_${selectedStatementId}`);
-          localStorage.removeItem(`changes_${selectedStatementId}`);
-          setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
-        } catch (error) {
-          console.error("Ошибка при сохранении ведомости:", error);
-          onShowWarning(`Ошибка: ${error.message}`);
-        }
-      },
-      "Подтвердите отправку ведомости",
-      "Ведомость успешно сохранена и сформирована!",
-      true
-    );
-  }, [getCurrentGrades, students, selectedStatementId, onOpenConfirm, onShowWarning, onShowSuccess, submitGradesMutation, generateStatementMutation]);
 
   const formatAverage = useCallback((studentId) => {
     if (!analytics || analytics.averages[studentId] === undefined || analytics.averages[studentId] === null) {
@@ -329,6 +382,14 @@ const AttestationForm = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentFocusedIndex, students, currentGrades, filteredGrades, handleGradeChange]);
+
+  if (loadingGrades) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-gray-500">Загрузка оценок...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full" style={{ height: 'calc(100vh - 10rem)' }}>

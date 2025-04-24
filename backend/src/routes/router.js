@@ -39,16 +39,20 @@ import {
 
 import { 
     getDisciplineById, 
-    getAllDisciplines 
+    getAllDisciplines,
+    createDiscipline,
+    updateDiscipline,
+    deleteDiscipline,
+    hasDisciplineDependencies
 } from "../controllers/disciplineController.js";
 
 import { 
-    getFacultyById 
+    getFacultyById,
 } from "../controllers/facultyController.js";
 
 import { 
     getSpecialtyById,
-    getAllSpecialties  // Добавлен импорт нового метода
+    getAllSpecialties
 } from "../controllers/specialtyController.js";
 
 import {
@@ -147,7 +151,29 @@ router.get("/statements/:statementId/missed-lessons", verifyToken, async (req, r
         res.status(500).json({ error: "Ошибка сервера", details: error.message });
     }
 });
+// Добавьте этот импорт в начало файла
+import { calculateStatementStatistics } from "../controllers/statementController.js";
 
+// Добавьте этот маршрут в раздел "Аналитика по ведомостям"
+// В вашем router.js
+router.get("/statements/:statementId/statistics", verifyToken, async (req, res) => {
+    try {
+        // Получаем ID из параметров маршрута и преобразуем в число
+        const statementId = parseInt(req.params.statementId, 10);
+        
+        // Проверяем, что ID валиден
+        if (isNaN(statementId)) {
+            return res.status(400).json({ error: 'Неверный ID ведомости' });
+        }
+        
+        // Вызываем функцию расчета статистики
+        const statistics = await calculateStatementStatistics(statementId);
+        res.json(statistics);
+    } catch (error) {
+        console.error('Ошибка при получении статистики:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 // Занятия
 router.get("/statements/:statementId/lessons", verifyToken, getLessonsByStatement);
 router.post("/lessons", verifyToken, createLesson);
@@ -170,30 +196,35 @@ router.get("/users/statuses/possible-values", getPossibleStatuses);
 router.get("/users/roles/possible-values", getPossibleRoles);
 
 // Дисциплины
-router.get("/disciplines", getAllDisciplines);
-router.get("/disciplines/:id", getDisciplineById);
+router.get("/disciplines", verifyToken, getAllDisciplines);
+router.get("/disciplines/:id", verifyToken, getDisciplineById);
+router.post("/disciplines", verifyToken, createDiscipline);
+router.put("/disciplines/:id", verifyToken, updateDiscipline);
+router.delete("/disciplines/:id", verifyToken, deleteDiscipline);
+router.get("/disciplines/:disciplineId/has-dependencies", verifyToken, hasDisciplineDependencies);
 
 // Группы
-router.get("/groups",verifyToken, getAllGroups);  // Получение всех групп
-router.get("/groups/:id", getGroupById);
-router.get("/groups/:groupId/students", getStudentsByGroup);
+router.get("/groups", verifyToken, getAllGroups);
+router.get("/groups/:id", verifyToken, getGroupById);
+router.get("/groups/:groupId/students", verifyToken, getStudentsByGroup);
 router.post('/groups', verifyToken, createGroup);
 router.put('/groups/:id', verifyToken, updateGroup);
 router.delete('/groups/:id', verifyToken, deleteGroup);
 router.get("/groups/:groupId/has-dependencies", verifyToken, hasGroupDependencies);
 
 // Специальности
-router.get("/specialties",verifyToken, getAllSpecialties);  // Добавлен новый маршрут для всех специальностей
-router.get("/specialties/:id", getSpecialtyById);
+router.get("/specialties", verifyToken, getAllSpecialties);
+router.get("/specialties/:id", verifyToken, getSpecialtyById);
 
 // Факультеты
-router.get("/faculties/:id", getFacultyById);
+
+router.get("/faculties/:id", verifyToken, getFacultyById);
 
 // Оценки
 router.post("/grades/set", verifyToken, setGrade);
 router.get("/grades", verifyToken, getGrades);
 router.get("/grades/possible-values", getPossibleGrades);
-router.delete("/grades", deleteGrade);
+router.delete("/grades", verifyToken, deleteGrade);
 
 // Генерация ведомостей
 router.post("/statements/:statementId/generate", verifyToken, async (req, res) => {

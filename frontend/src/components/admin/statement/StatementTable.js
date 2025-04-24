@@ -2,13 +2,47 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAllStatements, fetchAllTeachers, fetchAllDisciplines, downloadStatement } from "../../../utils/api";
 import EditStatementModal from "./EditStatementModal";
 import CreateStatementModal from "./CreateStatementModal";
-import { useState } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import WarningModal from '../../WarningModal';
+import SearchableSelect from '../SearchableSelect';
 
 const StatementTable = ({ onCancel }) => {
     const queryClient = useQueryClient();
     const [editingStatement, setEditingStatement] = useState(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+// В части фильтров изменил:
+const [filters, setFilters] = useState(() => {
+    if (typeof window !== 'undefined') {
+        const savedFilters = localStorage.getItem("statements_filters");
+        return savedFilters ? JSON.parse(savedFilters) : {
+            id: '',
+            teacherLogin: '',
+            groupId: '',
+            semester: '',
+            disciplineId: '',
+            practiceHours: '',
+            date: '',
+            assessmentType: '',
+            hasFile: ''
+        };
+    }
+    return {
+        id: '',
+        teacherLogin: '',
+        groupId: '',
+        semester: '',
+        disciplineId: '',
+        practiceHours: '',
+        date: '',
+        assessmentType: '',
+        hasFile: ''
+    };
+});
+
+    useEffect(() => {
+        localStorage.setItem("statements_filters", JSON.stringify(filters));
+    }, [filters]);
 
     const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
@@ -85,7 +119,6 @@ const StatementTable = ({ onCancel }) => {
         },
         meta: { suppressErrorLogging: true }
     });
-    
 
     const handleDownloadFile = (statementId) => {
         downloadMutation.mutate(statementId);
@@ -144,6 +177,28 @@ const StatementTable = ({ onCancel }) => {
         });
     };
 
+    const filteredStatements = useMemo(() => {
+        if (!statementsData) return [];
+        
+        return statementsData.filter(statement => {
+            return (
+                (!filters.id || statement.id?.toString() === filters.id.toString()) &&
+                (!filters.teacherLogin || statement.teacherLogin === filters.teacherLogin) &&
+                (!filters.groupId || statement.groupId?.toString() === filters.groupId.toString()) &&
+                (!filters.semester || statement.semester?.toString() === filters.semester.toString()) &&
+                (!filters.disciplineId || statement.disciplineId === filters.disciplineId) &&
+                (!filters.practiceHours || statement.practiceHours?.toString() === filters.practiceHours.toString()) &&
+                (!filters.date || statement.date === filters.date) && // Точное совпадение даты
+                (!filters.assessmentType || statement.assessmentType === filters.assessmentType) &&
+                (!filters.hasFile || 
+                    (filters.hasFile === "yes" ? statement.list : !statement.list))
+            );
+        });
+    }, [statementsData, filters]);
+    
+
+    const statements = sortData(filteredStatements, sortColumn, sortDirection);
+
     const handleEditStatement = (statement) => {
         setEditingStatement(statement);
     };
@@ -162,7 +217,107 @@ const StatementTable = ({ onCancel }) => {
         queryClient.invalidateQueries(['statements']);
     };
 
-    const statements = sortData(statementsData, sortColumn, sortDirection);
+    const handleFilterChange = (column, value) => {
+        setFilters(prev => ({
+            ...prev,
+            [column]: value
+        }));
+    };
+
+    const getFilterOptions = useCallback((column) => {
+        if (!statementsData) return [];
+    
+        return statementsData.filter(statement => {
+            return Object.entries(filters).every(([key, value]) => {
+                if (key === column || !value) return true;
+    
+                if (key === "teacherLogin" || key === "disciplineId") {
+                    return statement[key] === value;
+                }
+    
+                return statement[key]?.toString().includes(value.toString());
+            });
+        });
+    }, [statementsData, filters]);
+    // Добавим options для фильтров даты и файла
+// Исправленный вариант создания dateOptions
+const dateOptions = useMemo(() => {
+    const dateMap = new Map(); // Используем Map для устранения дубликатов
+    getFilterOptions('date').forEach(statement => {
+        if (statement.date) {
+            const formatted = formatDate(statement.date);
+            // Используем дату как ключ, чтобы избежать дубликатов
+            dateMap.set(statement.date, { 
+                id: statement.date, 
+                name: formatted 
+            });
+        }
+    });
+    // Преобразуем Map в массив и сортируем по дате
+    return Array.from(dateMap.values()).sort((a, b) => 
+        new Date(b.id) - new Date(a.id)
+    );
+}, [getFilterOptions]);
+
+const fileOptions = useMemo(() => [
+    { id: 'yes', name: 'Есть файл' },
+    { id: 'no', name: 'Нет файла' }
+], []);
+
+
+
+    const idOptions = useMemo(() => {
+        const values = new Set();
+        getFilterOptions('id').forEach(statement => statement.id && values.add(statement.id));
+        return Array.from(values).sort((a, b) => a - b);
+    }, [getFilterOptions]);
+
+    const teacherOptions = useMemo(() => {
+        const values = new Set();
+        getFilterOptions('teacherLogin').forEach(statement => statement.teacherLogin && values.add(statement.teacherLogin));
+        return teachers
+            .filter(teacher => values.has(teacher.login))
+            .map(teacher => ({
+                id: teacher.login,
+                name: `${teacher.lastName} ${teacher.firstName?.[0]}.${teacher.patronymic?.[0]}.`
+            }));
+    }, [getFilterOptions, teachers]);
+
+    const groupOptions = useMemo(() => {
+        const values = new Set();
+        getFilterOptions('groupId').forEach(statement => statement.groupId && values.add(statement.groupId));
+        return Array.from(values).sort();
+    }, [getFilterOptions]);
+
+    const semesterOptions = useMemo(() => {
+        const values = new Set();
+        getFilterOptions('semester').forEach(statement => statement.semester && values.add(statement.semester));
+        return Array.from(values).sort((a, b) => a - b);
+    }, [getFilterOptions]);
+
+    const disciplineOptions = useMemo(() => {
+        const values = new Set();
+        getFilterOptions('disciplineId').forEach(statement => statement.disciplineId && values.add(statement.disciplineId));
+        return disciplines
+            .filter(discipline => values.has(discipline.id))
+            .map(discipline => ({
+                id: discipline.id,
+                name: discipline.name
+            }));
+    }, [getFilterOptions, disciplines]);
+
+    const practiceHoursOptions = useMemo(() => {
+        const values = new Set();
+        getFilterOptions('practiceHours').forEach(statement => statement.practiceHours && values.add(statement.practiceHours));
+        return Array.from(values).sort((a, b) => a - b);
+    }, [getFilterOptions]);
+
+    const assessmentTypeOptions = useMemo(() => {
+        const values = new Set();
+        getFilterOptions('assessmentType').forEach(statement => statement.assessmentType && values.add(statement.assessmentType));
+        return Array.from(values).sort();
+    }, [getFilterOptions]);
+
     const isLoading = isStatementsLoading || isTeachersLoading || isDisciplinesLoading;
     const isError = isStatementsError || isTeachersError || isDisciplinesError;
 
@@ -206,224 +361,294 @@ const StatementTable = ({ onCancel }) => {
                 <div className="flex-1 overflow-hidden flex flex-col">
                     <div className="overflow-x-auto flex-1">
                         <table className="w-full text-sm text-gray-900 border-collapse table-fixed">
-                        <colgroup>
-                            <col style={{ width: getColumnWidth('id', '70px') }}/> 
-                            <col style={{ width: getColumnWidth('teacherLogin', '110px') }}/>
-                            <col style={{ width: getColumnWidth('groupId', '70px') }}/>
-                            <col style={{ width: getColumnWidth('semester', '60px') }}/>
-                            <col style={{ width: getColumnWidth('disciplineId', '180px') }}/>
-                            <col style={{ width: '60px' }}/>
-                            <col style={{ width: getColumnWidth('date', '75px') }}/>
-                            <col style={{ width: getColumnWidth('assessmentType', '80px') }}/>
-                            <col style={{ width: getColumnWidth('list', '75px') }}/>
-                            <col style={{ width: '85px' }}/>
-                        </colgroup>
+                            <colgroup>
+                                <col style={{ width: getColumnWidth('id', '85px') }}/> 
+                                <col style={{ width: getColumnWidth('teacherLogin', '110px') }}/>
+                                <col style={{ width: getColumnWidth('groupId', '70px') }}/>
+                                <col style={{ width: getColumnWidth('semester', '60px') }}/>
+                                <col style={{ width: getColumnWidth('disciplineId', '200px') }}/>
+                                <col style={{ width: '60px' }}/>
+                                <col style={{ width: getColumnWidth('date', '75px') }}/>
+                                <col style={{ width: getColumnWidth('assessmentType', '80px') }}/>
+                                <col style={{ width: getColumnWidth('list', '75px') }}/>
+                                <col style={{ width: '40px' }}/>
+                            </colgroup>
                             <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
-                                <tr>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer rounded-l-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("id")}
-                                    >
-                                        ID {sortColumn === "id" && (sortDirection === "asc" ? "▲" : "▼")}
+                                {/* Заголовки столбцов */}
+                                <tr className="h-[40px]">
+                                    {["id", "teacherLogin", "groupId", "semester", "disciplineId", "practiceHours", "date", "assessmentType", "list"].map((col, i) => (
+                                        <th
+                                            key={col}
+                                            className={`px-4 text-left cursor-pointer ${
+                                                i === 0 ? "rounded-tl-lg" : ""
+                                            } hover:bg-gray-400 border-b-0 transition-colors duration-200 truncate`}
+                                        >
+                                            <div className="flex items-center h-full" onClick={() => handleSort(col)}>
+                                                {{
+                                                    id: "ID",
+                                                    teacherLogin: "Преподаватель",
+                                                    groupId: "Группа",
+                                                    semester: "Сем.",
+                                                    disciplineId: "Дисциплина",
+                                                    practiceHours: "Часы",
+                                                    date: "Дата",
+                                                    assessmentType: "Тип",
+                                                    list: "Файл"
+                                                }[col]}{" "}
+                                                {sortColumn === col && (sortDirection === "asc" ? "▲" : "▼")}
+                                            </div>
+                                        </th>
+                                    ))}
+    
+                                    {/* Объединенная ячейка для кнопки создания */}
+                                    <th className="px-2 text-center border-b-0 rounded-tr-lg rounded-br-lg" colSpan="1" rowSpan="2">
+                                        <div className="flex justify-center">
+                                            <button
+                                                className="h-[40px] w-[40px] bg-teal-500 text-white rounded-lg shadow hover:bg-teal-600 transition flex items-center justify-center"
+                                                onClick={handleCreateStatement}
+                                                title="Создать"
+                                            >
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    className="h-5 w-5"
+                                                    fill="none"
+                                                    viewBox="0 0 24 24"
+                                                    stroke="currentColor"
+                                                >
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </th>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("teacherLogin")}
-                                    >
-                                        Преподаватель {sortColumn === "teacherLogin" && (sortDirection === "asc" ? "▲" : "▼")}
-                                    </th>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("groupId")}
-                                    >
-                                        Группа {sortColumn === "groupId" && (sortDirection === "asc" ? "▲" : "▼")}
-                                    </th>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("semester")}
-                                    >
-                                        Сем. {sortColumn === "semester" && (sortDirection === "asc" ? "▲" : "▼")}
-                                    </th>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("disciplineId")}
-                                    >
-                                        Дисциплина (практика) {sortColumn === "disciplineId" && (sortDirection === "asc" ? "▲" : "▼")}
-                                    </th>
-                                    <th
-    className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-    onClick={() => handleSort("practiceHours")}
->
-    Часы {sortColumn === "practiceHours" && (sortDirection === "asc" ? "▲" : "▼")}
-</th>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("date")}
-                                    >
-                                        Дата {sortColumn === "date" && (sortDirection === "asc" ? "▲" : "▼")}
-                                    </th>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("assessmentType")}
-                                    >
-                                        Тип {sortColumn === "assessmentType" && (sortDirection === "asc" ? "▲" : "▼")}
-                                    </th>
-                                    <th
-                                        className="py-3 px-4 text-left cursor-pointer border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                        onClick={() => handleSort("list")}
-                                    >
-                                        Файл {sortColumn === "list" && (sortDirection === "asc" ? "▲" : "▼")}
-                                    </th>
-                                    <th 
-                                        className="py-3 px-4 text-center rounded-r-lg border-b-0 hover:bg-gray-400 transition-colors duration-200 truncate"
-                                    >
-                                        Действия
-                                    </th>
+                                </tr>
+    
+                                {/* Фильтры под заголовками */}
+                                <tr className="h-[40px]">
+                                    {[
+                                        { field: "id", options: idOptions },
+                                        { field: "teacherLogin", options: teacherOptions, isTeacher: true },
+                                        { field: "groupId", options: groupOptions },
+                                        { field: "semester", options: semesterOptions },
+                                        { field: "disciplineId", options: disciplineOptions, isDiscipline: true },
+                                        { field: "practiceHours", options: practiceHoursOptions },
+                                        { field: "date", options: dateOptions, isDate: true },
+                                        { field: "assessmentType", options: assessmentTypeOptions },
+                                        { field: "list", options: fileOptions, isFile: true }
+                                    ].map(({ field, options, isTeacher, isDiscipline, isDate, isFile }, i) => (
+                                        <td key={field} className={`px-2 border-b-0 ${i === 0 ? "rounded-bl-lg" : ""}`}>
+                                            <div className="flex items-center w-full space-x-2">
+                                                <div className="flex-1">
+                                                    <SearchableSelect
+                                                        options={options}
+                                                        value={filters[field]}
+                                                        onChange={(value) => handleFilterChange(field, value)}
+                                                        placeholder="Фильтр"
+                                                        formatOption={(option) => 
+                                                            isTeacher ? option.name :
+                                                            isDiscipline ? option.name :
+                                                            isDate ? option.name :
+                                                            isFile ? option.name :
+                                                            option.toString()
+                                                        }
+                                                        getOptionValue={(option) => 
+                                                            isTeacher ? option.id :
+                                                            isDiscipline ? option.id :
+                                                            isDate ? option.id :
+                                                            isFile ? option.id :
+                                                            option
+                                                        }
+                                                        className="w-full"
+                                                        fontSize="sm"
+                                                    />
+                                                </div>
+                                                {filters[field] && (
+                                                    <button
+                                                        className="text-gray-500 hover:text-red-600 transition px-1"
+                                                        onClick={() => handleFilterChange(field, '')}
+                                                        title="Очистить"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {statements.map((statement, index) => {
-                                    const teacherFullName = getTeacherFullName(statement.teacherLogin);
-                                    const classTeacherName = statement.classTeacherLogin 
-                                        ? getTeacherFullName(statement.classTeacherLogin) 
-                                        : null;
-                                    const disciplineName = getDisciplineName(statement.disciplineId);
-                                    const formattedDate = formatDate(statement.date);
-                                    const hoursAndCredits = `${statement.practiceHours || 0}/${statement.creditUnits || 0} з.е.`;
-
-                                    return (
-                                        <tr
-                                            key={statement.id || `statement-${index}`}
-                                            className={`${index % 2 === 0 ? "bg-gray-100" : "bg-gray-200"} border-b-0`}
-                                        >
-                                            {/* ID */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer rounded-l-lg truncate"
-                                                title={statement.id}
-                                                onClick={() => handleCellClick("ID", statement.id)}
+                                {isLoading ? (
+                                    <tr>
+                                        <td colSpan="10" className="py-4 text-center">Загрузка...</td>
+                                    </tr>
+                                ) : isError ? (
+                                    <tr>
+                                        <td colSpan="10" className="py-4 text-center text-red-500">
+                                            Ошибка загрузки: {statementsError?.message}
+                                        </td>
+                                    </tr>
+                                ) : statements.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="10" className="py-4 text-center">Нет данных о ведомостях</td>
+                                    </tr>
+                                ) : (
+                                    statements.map((statement, index) => {
+                                        const teacherFullName = getTeacherFullName(statement.teacherLogin);
+                                        const classTeacherName = statement.classTeacherLogin 
+                                            ? getTeacherFullName(statement.classTeacherLogin) 
+                                            : null;
+                                        const disciplineName = getDisciplineName(statement.disciplineId);
+                                        const formattedDate = formatDate(statement.date);
+                                        const hoursAndCredits = `${statement.practiceHours || 0}/${statement.creditUnits || 0} з.е.`;
+    
+                                        return (
+                                            <tr
+                                                key={statement.id || `statement-${index}`}
+                                                className={`${index % 2 === 0 ? "bg-gray-100" : "bg-gray-200"} border-b-0`}
                                             >
-                                                {statement.id}
-                                            </td>
-                                            
-                                            {/* Преподаватель */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
-                                                title={teacherFullName}
-                                                onClick={() => handleCellClick("Преподаватель", teacherFullName, statement.teacherLogin)}
-                                            >
-                                                <div className="truncate">{teacherFullName}</div>
-                                                {classTeacherName && (
-                                                    <div className="text-xs text-gray-500 truncate" title={classTeacherName}>
-                                                        {classTeacherName}
-                                                    </div>
-                                                )}
-                                            </td>
-                                            
-                                            {/* Группа */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
-                                                title={statement.groupId}
-                                                onClick={() => handleCellClick("Группа", statement.groupId)}
-                                            >
-                                                {statement.groupId}
-                                            </td>
-                                            
-                                            {/* Семестр */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
-                                                title={statement.semester}
-                                                onClick={() => handleCellClick("Семестр", statement.semester)}
-                                            >
-                                                {statement.semester}
-                                            </td>
-                                            
-                                            {/* Дисциплина */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
-                                                title={disciplineName}
-                                                onClick={() => handleCellClick("Дисциплина", disciplineName)}
-                                            >
-                                                {disciplineName}
-                                            </td>
-                                            
-                                            {/* Часы / З.Е. */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
-                                                title={hoursAndCredits}
-                                                onClick={() => handleCellClick("Часы", hoursAndCredits)}
-                                            >
-                                                {hoursAndCredits}
-                                            </td>
-                                            
-                                            {/* Дата */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
-                                                title={formattedDate}
-                                                onClick={() => handleCellClick("Дата", formattedDate)}
-                                            >
-                                                {formattedDate}
-                                            </td>
-                                            
-                                            {/* Тип */}
-                                            <td
-                                                className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
-                                                title={statement.assessmentType}
-                                                onClick={() => handleCellClick("Тип", statement.assessmentType)}
-                                            >
-                                                {statement.assessmentType}
-                                            </td>
-                                            
-                                            {/* Файл */}
-                                            <td
-                                                className="py-2 px-2 truncate"
-                                                title={statement.list || 'Нет файла'}
-                                                onClick={() => statement.list && handleCellClick("Файл", statement.list)}
-                                            >
-                                                {statement.list ? (
-                                                    <button
-                                                        className="h-[40px] px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition truncate w-full"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDownloadFile(statement.id);
-                                                        }}
-                                                    >
-                                                        Скачать
-                                                    </button>
-                                                ) : (
-                                                    "Нет файла"
-                                                )}
-                                            </td>
-                                            
-                                            {/* Действия */}
-                                            <td className="py-2 px-2 text-center rounded-r-lg truncate">
-                                                <button
-                                                    className="h-[40px] px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition truncate w-full"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleEditStatement(statement);
-                                                    }}
+                                                {/* ID */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer rounded-l-lg truncate"
+                                                    title={statement.id}
+                                                    onClick={() => handleCellClick("ID", statement.id)}
                                                 >
-                                                    Изменить
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                                    {statement.id}
+                                                </td>
+                                                
+                                                {/* Преподаватель */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                                    title={teacherFullName}
+                                                    onClick={() => handleCellClick("Преподаватель", teacherFullName, statement.teacherLogin)}
+                                                >
+                                                    <div className="truncate">{teacherFullName}</div>
+                                                    {classTeacherName && (
+                                                        <div className="text-xs text-gray-500 truncate" title={classTeacherName}>
+                                                            {classTeacherName}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                
+                                                {/* Группа */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                                    title={statement.groupId}
+                                                    onClick={() => handleCellClick("Группа", statement.groupId)}
+                                                >
+                                                    {statement.groupId}
+                                                </td>
+                                                
+                                                {/* Семестр */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                                    title={statement.semester}
+                                                    onClick={() => handleCellClick("Семестр", statement.semester)}
+                                                >
+                                                    {statement.semester}
+                                                </td>
+                                                
+                                                {/* Дисциплина */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                                    title={disciplineName}
+                                                    onClick={() => handleCellClick("Дисциплина", disciplineName)}
+                                                >
+                                                    {disciplineName}
+                                                </td>
+                                                
+                                                {/* Часы / З.Е. */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                                    title={hoursAndCredits}
+                                                    onClick={() => handleCellClick("Часы", hoursAndCredits)}
+                                                >
+                                                    {hoursAndCredits}
+                                                </td>
+                                                
+                                                {/* Дата */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                                    title={formattedDate}
+                                                    onClick={() => handleCellClick("Дата", formattedDate)}
+                                                >
+                                                    {formattedDate}
+                                                </td>
+                                                
+                                                {/* Тип */}
+                                                <td
+                                                    className="py-3 px-4 hover:bg-gray-50 cursor-pointer truncate"
+                                                    title={statement.assessmentType}
+                                                    onClick={() => handleCellClick("Тип", statement.assessmentType)}
+                                                >
+                                                    {statement.assessmentType}
+                                                </td>
+                                                
+                                                {/* Файл */}
+                                                <td
+                                                    className="py-2 px-2 truncate"
+                                                    title={statement.list || 'Нет файла'}
+                                                    onClick={() => statement.list && handleCellClick("Файл", statement.list)}
+                                                >
+                                                    {statement.list ? (
+                                                        <button
+                                                            className="h-[40px] w-full px-2 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition flex items-center justify-center"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDownloadFile(statement.id);
+                                                            }}
+                                                        >
+                                                            <svg
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                className="h-4 w-4 mr-1"
+                                                                fill="none"
+                                                                viewBox="0 0 24 24"
+                                                                stroke="currentColor"
+                                                            >
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                            </svg>
+                                                            <span className="truncate">Скачать</span>
+                                                        </button>
+                                                    ) : (
+                                                        "Нет файла"
+                                                    )}
+                                                </td>
+                                                
+                                                {/* Действия */}
+                                                <td 
+                                                    className="py-2 px-2 text-center rounded-r-lg truncate relative hover:bg-gray-50 cursor-pointer"
+                                                    title="Редактировать"
+                                                    onClick={() => handleEditStatement(statement)}
+                                                >
+                                                    <div className="flex justify-center">
+                                                        <button
+                                                            className="h-[40px] w-[40px] flex items-center justify-center bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEditStatement(statement);
+                                                            }}
+                                                            aria-label="Редактировать"
+                                                        >
+                                                            <svg
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                className="h-5 w-5"
+                                                                viewBox="0 0 20 20"
+                                                                fill="currentColor"
+                                                            >
+                                                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
-    
-                <div className="flex justify-end space-x-4 mt-4">
-                    <button
-                        className="h-[40px] px-6 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
-                        onClick={handleCreateStatement}
-                    >
-                        Создать ведомость
-                    </button>
-                </div>
             </div>
     
+            {/* Модальные окна */}
             {editingStatement && <EditStatementModal statement={editingStatement} onClose={handleCloseModal} />}
             {isCreateModalOpen && <CreateStatementModal onClose={handleCloseCreateModal} />}
             {isErrorModalOpen && (

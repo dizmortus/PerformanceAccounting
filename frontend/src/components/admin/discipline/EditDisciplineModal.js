@@ -1,18 +1,15 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { updateStudent, deleteStudent, hasStudentDependencies, fetchAllGroups } from "../../../utils/api";
+import { useMutation } from "@tanstack/react-query";
+import { updateDiscipline, deleteDiscipline, hasDisciplineDependencies } from "../../../utils/api";
 import ConfirmModal from '../../ConfirmModal';
 import WarningModal from '../../WarningModal';
-import SearchableSelect from '../SearchableSelect';
 
-const EditStudentModal = ({ student, onClose }) => {
-    const [localStudent, setLocalStudent] = useState({
+const EditDisciplineModal = ({ discipline, onClose }) => {
+    const [localDiscipline, setLocalDiscipline] = useState({
         id: "",
-        lastName: "",
-        firstName: "",
-        patronymic: "",
-        groupId: ""
+        name: "",
+        isPractice: false
     });
     
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -20,70 +17,62 @@ const EditStudentModal = ({ student, onClose }) => {
     const [warningText, setWarningText] = useState("");
     const [validationErrors, setValidationErrors] = useState({});
 
-    const { data: groups = [], isLoading: isGroupsLoading } = useQuery({
-        queryKey: ['groups'],
-        queryFn: fetchAllGroups,
-        staleTime: 60 * 1000
-    });
-
-    const updateStudentMutation = useMutation({
-        mutationFn: ({ id, studentData }) => updateStudent(id, studentData),
+    const updateDisciplineMutation = useMutation({
+        mutationFn: ({ id, disciplineData }) => updateDiscipline(id, disciplineData),
         onSuccess: () => {
-            onClose(true); // Просто закрываем модальное окно без сообщения
+            onClose(true);
         },
         onError: (error) => {
-            console.error("Ошибка при обновлении студента:", error);
-            setWarningText(error.message || "Ошибка при обновлении студента. Попробуйте снова.");
+            console.error("Ошибка при обновлении дисциплины:", error);
+            setWarningText(error.message || "Ошибка при обновлении дисциплины. Попробуйте снова.");
             setIsWarningOpen(true);
         }
     });
 
     const checkDependenciesMutation = useMutation({
-        mutationFn: hasStudentDependencies,
+        mutationFn: hasDisciplineDependencies,
         onSuccess: (hasDependencies) => {
             if (hasDependencies) {
                 setIsConfirmOpen(false);
-                setWarningText("Удаление невозможно, так как существуют связанные оценки или посещения.");
+                setWarningText("Удаление невозможно, так как существуют связанные оценки.");
                 setIsWarningOpen(true);
             } else {
-                deleteStudentMutation.mutate(localStudent.id);
+                deleteDisciplineMutation.mutate(localDiscipline.id);
             }
         },
         onError: (error) => {
             console.error("Ошибка при проверке зависимостей:", error);
             setIsConfirmOpen(false);
-            setWarningText("Не удалось проверить зависимости студента. Удаление отменено.");
+            setWarningText("Не удалось проверить зависимости дисциплины. Удаление отменено.");
             setIsWarningOpen(true);
         }
     });
 
-    const deleteStudentMutation = useMutation({
-        mutationFn: deleteStudent,
+    const deleteDisciplineMutation = useMutation({
+        mutationFn: deleteDiscipline,
         onSuccess: () => {
-            onClose(true); // Закрываем модальное окно после успешного удаления
+            onClose(true);
         },
         onError: (error) => {
-            console.error("Ошибка при удалении студента:", error);
-            setWarningText(error.message || "Произошла ошибка при удалении студента.");
+            console.error("Ошибка при удалении дисциплины:", error);
+            setWarningText(error.message || "Произошла ошибка при удалении дисциплины.");
             setIsWarningOpen(true);
         }
     });
 
     useEffect(() => {
-        if (student) {
-            setLocalStudent({
-                id: student.id,
-                lastName: student.lastName,
-                firstName: student.firstName,
-                patronymic: student.patronymic || "",
-                groupId: student.groupId
+        if (discipline) {
+            setLocalDiscipline({
+                id: discipline.id,
+                name: discipline.name,
+                isPractice: discipline.isPractice
             });
         }
-    }, [student]);
+    }, [discipline]);
 
     const handleChange = (e, field) => {
         const value = e.target.value;
-        setLocalStudent(prev => ({
+        setLocalDiscipline(prev => ({
             ...prev,
             [field]: value,
         }));
@@ -96,30 +85,22 @@ const EditStudentModal = ({ student, onClose }) => {
         }
     };
 
-    const handleGroupChange = (selectedGroupId) => {
-        setLocalStudent(prev => ({
+    const handlePracticeChange = (e) => {
+        setLocalDiscipline(prev => ({
             ...prev,
-            groupId: selectedGroupId,
+            isPractice: e.target.checked,
         }));
     };
 
     const handleSave = async () => {
         const errors = {};
         
-        if (!localStudent.id) {
-            errors.id = "Укажите ID студента";
+        if (!localDiscipline.id) {
+            errors.id = "Укажите ID дисциплины";
         }
         
-        if (!localStudent.lastName) {
-            errors.lastName = "Укажите фамилию";
-        }
-        
-        if (!localStudent.firstName) {
-            errors.firstName = "Укажите имя";
-        }
-
-        if (!localStudent.groupId) {
-            errors.groupId = "Выберите группу";
+        if (!localDiscipline.name) {
+            errors.name = "Укажите название дисциплины";
         }
 
         if (Object.keys(errors).length > 0) {
@@ -127,23 +108,23 @@ const EditStudentModal = ({ student, onClose }) => {
             return;
         }
 
-        updateStudentMutation.mutate({ 
-            id: student.id, // Старый ID передаем в параметрах запроса
-            studentData: localStudent // Новые данные (включая новый ID) в теле запроса
+        updateDisciplineMutation.mutate({ 
+            id: discipline.id,
+            disciplineData: localDiscipline
         });
     };
 
     const handleDelete = async () => {
-        checkDependenciesMutation.mutate(localStudent.id);
+        checkDependenciesMutation.mutate(localDiscipline.id);
     };
 
-    if (!student) return null;
+    if (!discipline) return null;
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg relative">
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-semibold">Редактирование студента</h2>
+                        <h2 className="text-xl font-semibold">Редактирование дисциплины</h2>
                         <button
                             className="text-gray-500 hover:text-gray-700 transition"
                             onClick={() => onClose(false)}
@@ -157,15 +138,15 @@ const EditStudentModal = ({ student, onClose }) => {
                     
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">ID студента</label>
+                            <label className="block text-sm font-medium text-gray-700">ID дисциплины</label>
                             <input
                                 type="text"
-                                value={localStudent.id}
+                                value={localDiscipline.id}
                                 onChange={(e) => handleChange(e, "id")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
                                     validationErrors.id ? "border-red-500" : ""
                                 }`}
-                                placeholder="Введите ID студента"
+                                placeholder="Введите ID дисциплины"
                             />
                             {validationErrors.id && (
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.id}</p>
@@ -173,74 +154,45 @@ const EditStudentModal = ({ student, onClose }) => {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Фамилия</label>
+                            <label className="block text-sm font-medium text-gray-700">Название дисциплины</label>
                             <input
                                 type="text"
-                                value={localStudent.lastName}
-                                onChange={(e) => handleChange(e, "lastName")}
+                                value={localDiscipline.name}
+                                onChange={(e) => handleChange(e, "name")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
-                                    validationErrors.lastName ? "border-red-500" : ""
+                                    validationErrors.name ? "border-red-500" : ""
                                 }`}
-                                placeholder="Введите фамилию"
+                                placeholder="Введите название дисциплины"
                             />
-                            {validationErrors.lastName && (
-                                <p className="text-red-500 text-sm mt-1">{validationErrors.lastName}</p>
+                            {validationErrors.name && (
+                                <p className="text-red-500 text-sm mt-1">{validationErrors.name}</p>
                             )}
                         </div>
-    
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Имя</label>
-                            <input
-                                type="text"
-                                value={localStudent.firstName}
-                                onChange={(e) => handleChange(e, "firstName")}
-                                className={`w-full px-2 py-1 border rounded-lg ${
-                                    validationErrors.firstName ? "border-red-500" : ""
-                                }`}
-                                placeholder="Введите имя"
-                            />
-                            {validationErrors.firstName && (
-                                <p className="text-red-500 text-sm mt-1">{validationErrors.firstName}</p>
-                            )}
-                        </div>
-    
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Отчество</label>
-                            <input
-                                type="text"
-                                value={localStudent.patronymic}
-                                onChange={(e) => handleChange(e, "patronymic")}
-                                className="w-full px-2 py-1 border rounded-lg"
-                                placeholder="Введите отчество (необязательно)"
-                            />
-                        </div>
-    
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Группа</label>
-                            <SearchableSelect
-                                options={groups}
-                                value={localStudent.groupId}
-                                onChange={handleGroupChange}
-                                placeholder="Выберите группу"
-                                formatOption={(option) => option.id}
-                                searchBy={(option) => option.id.toLowerCase()}
-                                getOptionKey={(option) => option.id}
-                                disabled={isGroupsLoading}
-                            />
-                            {validationErrors.groupId && (
-                                <p className="text-red-500 text-sm mt-1">{validationErrors.groupId}</p>
-                            )}
-                        </div>
+                        <div className="flex items-center mt-4">
+    <input
+        type="checkbox"
+        id="isPractice"
+        checked={localDiscipline.isPractice}
+        onChange={handlePracticeChange}
+        className="appearance-none h-8 w-8 bg-white border-2 border-gray-300 rounded-xl checked:bg-teal-500 checked:border-teal-500 transition-all duration-200 cursor-pointer relative
+                   flex items-center justify-center after:content-['✔'] after:text-white after:text-base after:scale-0 checked:after:scale-100 after:transition-transform after:duration-200"
+    />
+    <label htmlFor="isPractice" className="ml-3 text-sm font-medium text-gray-700">
+        Является практикой
+    </label>
+</div>
+
+
                     </div>
     
                     <div className="flex justify-between mt-6">
                         <button
                             className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
                             onClick={handleSave}
-                            disabled={updateStudentMutation.isPending}
+                            disabled={updateDisciplineMutation.isPending}
                             title="Сохранить изменения"
                         >
-                            {updateStudentMutation.isPending ? (
+                            {updateDisciplineMutation.isPending ? (
                                 <>
                                     <span>Сохранение...</span>
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" viewBox="0 0 20 20" fill="currentColor">
@@ -260,10 +212,10 @@ const EditStudentModal = ({ student, onClose }) => {
                         <button
                             className="h-[40px] w-[40px] p-2 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 transition flex items-center justify-center"
                             onClick={() => setIsConfirmOpen(true)}
-                            disabled={deleteStudentMutation.isPending}
-                            title="Удалить студента"
+                            disabled={deleteDisciplineMutation.isPending}
+                            title="Удалить дисциплину"
                         >
-                            {deleteStudentMutation.isPending ? (
+                            {deleteDisciplineMutation.isPending ? (
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" viewBox="0 0 20 20" fill="currentColor">
                                     <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
                                 </svg>
@@ -281,7 +233,7 @@ const EditStudentModal = ({ student, onClose }) => {
                 isOpen={isConfirmOpen}
                 onClose={() => setIsConfirmOpen(false)}
                 onConfirm={handleDelete}
-                confirmText="Вы действительно хотите удалить студента? Это действие необратимо!"
+                confirmText="Вы действительно хотите удалить дисциплину? Это действие необратимо!"
             />
             
             <WarningModal
@@ -293,4 +245,4 @@ const EditStudentModal = ({ student, onClose }) => {
     );
 };
 
-export default EditStudentModal;
+export default EditDisciplineModal;

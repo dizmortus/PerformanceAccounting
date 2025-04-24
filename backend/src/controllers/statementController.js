@@ -1,13 +1,10 @@
-import { Statement, Group, Specialty } from "../models/index.js";
+import { Statement, Group, Specialty, Discipline } from "../models/index.js";
 import { sequelize } from "../models/index.js";
 import { Op } from "sequelize";
 import { Lesson, Grade, Student } from "../models/index.js";
 
 /**
  * Получение ведомостей преподавателя (как основного, так и преподавателя занятий)
- */
-/**
- * Получение ведомостей преподавателя с учетом сложных условий
  */
 export const getTeacherStatements = async (req, res) => {
     try {
@@ -23,11 +20,18 @@ export const getTeacherStatements = async (req, res) => {
                     { classTeacherLogin: login }
                 ]
             },
-            include: [{
-                model: Group,
-                as: 'group',
-                attributes: ['admissionYear']
-            }],
+            include: [
+                {
+                    model: Group,
+                    as: 'group',
+                    attributes: ['admissionYear']
+                },
+                {
+                    model: Discipline,
+                    as: 'discipline',
+                    attributes: ['name']
+                }
+            ],
             attributes: [
                 "id",
                 "teacherLogin",
@@ -100,7 +104,13 @@ export const getTeacherStatements = async (req, res) => {
             return false;
         });
 
-        res.json(filteredStatements);
+        // Форматируем результат, чтобы включить название дисциплины
+        const result = filteredStatements.map(statement => ({
+            ...statement.get({ plain: true }),
+            disciplineName: statement.discipline ? statement.discipline.name : null
+        }));
+
+        res.json(result);
     } catch (error) {
         console.error("Ошибка при получении ведомостей:", error);
         res.status(500).json({ error: "Ошибка сервера" });
@@ -553,5 +563,134 @@ export const getStatementByGroupDisciplineSemester = async (req, res) => {
     } catch (error) {
         console.error("Ошибка при получении ведомости:", error);
         res.status(500).json({ error: "Ошибка сервера" });
+    }
+};
+export const calculateStatementStatistics = async (statementId) => {
+    const id = Number(statementId);
+    if (isNaN(id)) {
+        throw new Error(`Неверный ID ведомости: ${statementId}. Ожидается числовое значение.`);
+    }
+
+    console.log(`[STATISTICS] Начало расчета статистики для ведомости ID: ${id}`);
+
+    try {
+        // 1. Получаем все занятия ведомости
+        const lessons = await Lesson.findAll({
+            where: { statementId: id },
+            include: [{
+                model: Grade,
+                as: 'grades',
+                attributes: ['studentId', 'value']
+            }],
+            attributes: ['id']
+        });
+
+        if (!lessons.length) {
+            console.warn(`[STATISTICS] Ведомость ${id} не содержит занятий. Возвращаем null значения.`);
+            return {
+                overallAverage: null,
+                attendancePercentage: null,
+                certificationPercentage: null,
+                certificationAverage: null
+            };
+        }
+
+        let totalGradesSum = 0;
+        let totalGradesCount = 0;
+        let totalPossibleAttendances = 0;
+        let actualAttendances = 0;
+        const studentIds = new Set();
+        const missedCounts = {}; // Добавляем объект для подсчета пропусков
+
+        for (const lesson of lessons) {
+            let lessonSum = 0;
+            let lessonCount = 0;
+            
+            for (const grade of (lesson.grades || [])) {
+                studentIds.add(grade.studentId);
+                
+                if (/^[0-9]+$/.test(grade.value)) {
+                    const numericValue = parseInt(grade.value);
+                    lessonSum += numericValue;
+                    lessonCount++;
+                    totalGradesSum += numericValue;
+                    totalGradesCount++;
+                    actualAttendances++;
+                } else if (grade.value === 'не явился') {
+                    // Учитываем пропуски
+                    missedCounts[grade.studentId] = (missedCounts[grade.studentId] || 0) + 1;
+                }
+            }
+            
+            // Учитываем всех студентов для возможных посещений
+            totalPossibleAttendances += studentIds.size;
+        }
+
+        const totalStudents = studentIds.size;
+        const totalMissed = Object.values(missedCounts).reduce((sum, count) => sum + count, 0);
+        actualAttendances = totalPossibleAttendances - totalMissed;
+
+        // Расчёт оценок, связанных напрямую с ведомостью (аттестационные оценки)
+        console.log(`[STATISTICS] Получение оценок, связанных напрямую с ведомостью ID: ${id}`);
+        const certificationGradesRaw = await Grade.findAll({
+            where: { statementId: id },
+            attributes: ['studentId', 'value']
+        });
+
+        const certificationValues = [];
+        let totalCertificationPossible = totalStudents;
+        let passedCertification = 0;
+
+        for (const grade of certificationGradesRaw) {
+            if (grade.value === 'зачет' || grade.value === 'незачет') {
+                if (grade.value === 'зачет') {
+                    certificationValues.push(1);
+                    passedCertification++;
+                } else {
+                    certificationValues.push(0);
+                }
+            } else if (/^[0-9]+$/.test(grade.value)) {
+                const numericValue = parseInt(grade.value);
+                certificationValues.push(numericValue);
+                if (numericValue >= 4) {
+                    passedCertification++;
+                }
+            } else if (grade.value === 'не допущен') {
+                totalCertificationPossible--; // Уменьшаем общее количество для аттестации
+            }
+        }
+
+        // Расчет процента посещаемости
+        const attendancePercentage = totalPossibleAttendances > 0
+            ? (actualAttendances / totalPossibleAttendances) * 100
+            : 0;
+
+        // Расчет процента аттестации
+        const certificationPercentage = totalCertificationPossible > 0
+            ? (passedCertification / totalCertificationPossible) * 100
+            : 0;
+
+        const overallAverage = totalGradesCount > 0
+            ? totalGradesSum / totalGradesCount
+            : null;
+
+        const certificationAverage = certificationValues.length > 0
+            ? (certificationValues.reduce((sum, val) => sum + val, 0) / certificationValues.length)
+            : null;
+
+        const result = {
+            overallAverage,
+            attendancePercentage: attendancePercentage.toFixed(1),
+            certificationPercentage: certificationPercentage.toFixed(1),
+            certificationAverage: certificationAverage !== null
+                ? certificationAverage.toFixed(1)
+                : null
+        };
+
+        console.log(`[STATISTICS] Итоговая статистика для ведомости ${id}:`, JSON.stringify(result, null, 2));
+        return result;
+    } catch (error) {
+        console.error(`[STATISTICS] Ошибка при расчете статистики ведомости ${id}:`, error);
+        throw error;
     }
 };

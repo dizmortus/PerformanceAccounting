@@ -33,6 +33,10 @@ const Statement = statementModel(sequelize, DataTypes);
 const Lesson = lessonModel(sequelize, DataTypes);
 const Grade = gradeModel(sequelize, DataTypes);
 
+Student.hasMany(Grade, { foreignKey: 'studentId', as: 'grades' });
+Grade.belongsTo(Student, { foreignKey: 'studentId' });
+
+
 // Ассоциации
 Group.belongsTo(Specialty, { foreignKey: "specialtyId", as: "specialty" });
 Specialty.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
@@ -44,9 +48,30 @@ User.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
 Faculty.hasMany(Discipline, { foreignKey: "facultyId", as: "disciplines" });
 Faculty.hasMany(User, { foreignKey: "facultyId", as: "users" });
 // Связи для Ведомости
-Statement.belongsTo(Discipline, { foreignKey: "disciplineId", as: "discipline" });
-Statement.belongsTo(Group, { foreignKey: "groupId", as: "group" });
-Statement.belongsTo(User, { foreignKey: "teacherLogin", as: "teacher" });
+Statement.belongsTo(Discipline, {
+  foreignKey: 'disciplineId',
+  as: 'discipline',
+  onUpdate: 'CASCADE',
+});
+
+Statement.belongsTo(Group, {
+  foreignKey: 'groupId',
+  as: 'group',
+  onUpdate: 'CASCADE',
+});
+
+Statement.belongsTo(User, {
+  foreignKey: 'teacherLogin',
+  as: 'teacher',
+  onUpdate: 'CASCADE',
+});
+
+Statement.belongsTo(User, {
+  foreignKey: 'classTeacherLogin',
+  as: 'classTeacher',
+  onUpdate: 'CASCADE',
+});
+
 Statement.hasMany(Grade, { 
   foreignKey: "statementId", 
   as: "grades",

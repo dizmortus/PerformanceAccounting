@@ -194,218 +194,222 @@ useEffect(() => {
 
     fetchAndSetStatementData();
 }, [localStatement.assessmentType, localStatement.groupId, localStatement.disciplineId, localStatement.semester]);
-    return (
-        <>
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg">
-                    <h2 className="text-xl font-semibold mb-4">Создание новой ведомости</h2>
-                    <div className="space-y-4">
-                        {/* Assessment type dropdown */}
-<div>
-    <label className="block text-sm font-medium text-gray-700">Тип аттестации</label>
-    <SearchableSelect
-        options={assessmentTypeOptions}
-        value={localStatement.assessmentType.charAt(0).toUpperCase() + localStatement.assessmentType.slice(1)}
-        onChange={(value) => handleChange({ target: { value: value.toLowerCase() } }, "assessmentType")}
-        placeholder="Выберите тип аттестации"
-        error={validationErrors.assessmentType}  // ошибка передается в компонент
-        formatOption={(option) => option}
-        searchBy={(option) => option.toLowerCase()}
-    />
-    {/* УДАЛЕНО дублирующее сообщение об ошибке */}
-</div>
+return (
+    <>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg relative">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold">Создание новой ведомости</h2>
+                    <button
+                        className="text-gray-500 hover:text-gray-700 transition"
+                        onClick={onClose}
+                        title="Закрыть"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div className="space-y-4">
+                    {/* Assessment type dropdown */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Тип аттестации</label>
+                        <SearchableSelect
+                            options={assessmentTypeOptions}
+                            value={localStatement.assessmentType.charAt(0).toUpperCase() + localStatement.assessmentType.slice(1)}
+                            onChange={(value) => handleChange({ target: { value: value.toLowerCase() } }, "assessmentType")}
+                            placeholder="Выберите тип аттестации"
+                            error={validationErrors.assessmentType}
+                            formatOption={(option) => option}
+                            searchBy={(option) => option.toLowerCase()}
+                        />
+                    </div>
 
-{/* Discipline dropdown */}
-<div>
-    <label className="block text-sm font-medium text-gray-700">
-        {localStatement.assessmentType === "практика" ? "Практика" : "Дисциплина"}
-    </label>
-    <SearchableSelect
-        options={filteredDisciplines}
-        value={localStatement.disciplineId}
-        onChange={(value) => setLocalStatement({ ...localStatement, disciplineId: value })}
-        placeholder={
-            localStatement.assessmentType === "практика" ? "Выберите практику" : "Выберите дисциплину"
-        }
-        error={validationErrors.disciplineId}  // ошибка передается в компонент
-        formatOption={(d) => d.name}
-        searchBy={(d) => d.name.toLowerCase()}
-        disabled={!localStatement.assessmentType}
-    />
-    {/* УДАЛЕНО дублирующее сообщение об ошибке */}
-</div>
+                    {/* Discipline dropdown */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                            {localStatement.assessmentType === "практика" ? "Практика" : "Дисциплина"}
+                        </label>
+                        <SearchableSelect
+                            options={filteredDisciplines}
+                            value={localStatement.disciplineId}
+                            onChange={(value) => setLocalStatement({ ...localStatement, disciplineId: value })}
+                            placeholder={
+                                localStatement.assessmentType === "практика" ? "Выберите практику" : "Выберите дисциплину"
+                            }
+                            error={validationErrors.disciplineId}
+                            formatOption={(d) => d.name}
+                            searchBy={(d) => d.name.toLowerCase()}
+                            disabled={!localStatement.assessmentType}
+                        />
+                    </div>
 
-{/* Group dropdown */}
-<div>
-    <label className="block text-sm font-medium text-gray-700">Группа</label>
-    <SearchableSelect
-        options={groups}
-        value={localStatement.groupId}
-        onChange={(value) => setLocalStatement({ ...localStatement, groupId: value })}
-        placeholder="Выберите группу"
-        error={validationErrors.groupId}  // ошибка передается в компонент
-        formatOption={(group) => group.id}
-        searchBy={(group) => group.id.toLowerCase()}
-    />
-    {/* УДАЛЕНО дублирующее сообщение об ошибке */}
-</div>
+                    {/* Group dropdown */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Группа</label>
+                        <SearchableSelect
+                            options={groups}
+                            value={localStatement.groupId}
+                            onChange={(value) => setLocalStatement({ ...localStatement, groupId: value })}
+                            placeholder="Выберите группу"
+                            error={validationErrors.groupId}
+                            formatOption={(group) => group.id}
+                            searchBy={(group) => group.id.toLowerCase()}
+                        />
+                    </div>
 
+                    {/* Semester input */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Семестр</label>
+                        <input
+                            type="number"
+                            value={localStatement.semester || ""}
+                            onChange={(e) => handleChange(e, "semester")}
+                            min="1"
+                            max="10"
+                            className={`w-full px-2 py-1 border rounded-lg ${
+                                validationErrors.semester ? "border-red-500" : ""
+                            }`}
+                        />
+                        {validationErrors.semester && (
+                            <p className="text-red-500 text-sm mt-1">{validationErrors.semester}</p>
+                        )}
+                    </div>
 
-    
-                        {/* Semester input */}
+                    {/* Teacher dropdown */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Преподаватель</label>
+                        <SearchableSelect
+                            options={teachers}
+                            value={localStatement.teacherLogin}
+                            onChange={(value) => setLocalStatement({ ...localStatement, teacherLogin: value })}
+                            placeholder="Выберите преподавателя"
+                            error={validationErrors.teacherLogin}
+                            formatOption={formatTeacherName}
+                            searchBy={(teacher) =>
+                                `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
+                            }
+                        />
+                    </div>
+
+                    {/* Class Teacher */}
+                    {["зачет", "экзамен", "дифференцированный зачет"].includes(localStatement.assessmentType) && (
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Семестр</label>
+                            <label className="block text-sm font-medium text-gray-700">Преподаватель занятий</label>
+                            <SearchableSelect
+                                options={teachers}
+                                value={localStatement.classTeacherLogin}
+                                onChange={(value) => setLocalStatement({ ...localStatement, classTeacherLogin: value })}
+                                placeholder="Выберите преподавателя занятий"
+                                error={validationErrors.classTeacherLogin}
+                                formatOption={formatTeacherName}
+                                searchBy={(teacher) =>
+                                    `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
+                                }
+                            />
+                        </div>
+                    )}
+
+                    {/* Date input */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Дата (необязательно)</label>
+                        <input
+                            type="date"
+                            value={localStatement.date || ""}
+                            onChange={(e) => handleChange(e, "date")}
+                            className={`w-full px-2 py-1 border rounded-lg ${
+                                validationErrors.date ? "border-red-500" : "border-gray-300"
+                            }`}
+                        />
+                        {validationErrors.date && (
+                            <p className="text-red-500 text-sm mt-1">{validationErrors.date}</p>
+                        )}
+                    </div>
+
+                    {/* Practice hours and credit units */}
+                    <div className="flex gap-4">
+                        {/* Practice hours input */}
+                        <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700">Часы практики</label>
                             <input
                                 type="number"
-                                value={localStatement.semester || ""}
-                                onChange={(e) => handleChange(e, "semester")}
+                                value={localStatement.practiceHours || ""}
+                                onChange={(e) => handleChange(e, "practiceHours")}
                                 min="1"
-                                max="10"
+                                readOnly={localStatement.assessmentType === "курсовой проект"}
                                 className={`w-full px-2 py-1 border rounded-lg ${
-                                    validationErrors.semester ? "border-red-500" : ""
-                                }`}
+                                    validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
+                                } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
                             />
-                            {validationErrors.semester && (
-                                <p className="text-red-500 text-sm mt-1">{validationErrors.semester}</p>
+                            {validationErrors.practiceHours && (
+                                <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
                             )}
                         </div>
-    
 
-
-                        {/* Teacher dropdown */}
-<div>
-    <label className="block text-sm font-medium text-gray-700">Преподаватель</label>
-    <SearchableSelect
-        options={teachers}
-        value={localStatement.teacherLogin}
-        onChange={(value) => setLocalStatement({ ...localStatement, teacherLogin: value })}
-        placeholder="Выберите преподавателя"
-        error={validationErrors.teacherLogin}  // ошибка передается в компонент
-        formatOption={formatTeacherName}
-        searchBy={(teacher) =>
-            `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
-        }
-    />
-    {/* УДАЛЕНО дублирующее сообщение об ошибке */}
-</div>
-
-{/* Class Teacher */}
-{["зачет", "экзамен", "дифференцированный зачет"].includes(localStatement.assessmentType) && (
-    <div>
-        <label className="block text-sm font-medium text-gray-700">Преподаватель занятий</label>
-        <SearchableSelect
-            options={teachers}
-            value={localStatement.classTeacherLogin}
-            onChange={(value) => setLocalStatement({ ...localStatement, classTeacherLogin: value })}
-            placeholder="Выберите преподавателя занятий"
-            error={validationErrors.classTeacherLogin}  // ошибка передается в компонент
-            formatOption={formatTeacherName}
-            searchBy={(teacher) =>
-                `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
-            }
-        />
-        {/* УДАЛЕНО дублирующее сообщение об ошибке */}
-    </div>
-)}
-
-
-
-    
-                        {/* Date input */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Дата (необязательно)</label>
+                        {/* Credit units input */}
+                        <div className="flex-1">
+                            <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
                             <input
-                                type="date"
-                                value={localStatement.date || ""}
-                                onChange={(e) => handleChange(e, "date")}
+                                type="number"
+                                value={localStatement.creditUnits || ""}
+                                onChange={(e) => handleChange(e, "creditUnits")}
+                                min="1"
+                                readOnly={localStatement.assessmentType === "курсовой проект"}
                                 className={`w-full px-2 py-1 border rounded-lg ${
-                                    validationErrors.date ? "border-red-500" : "border-gray-300"
-                                }`}
+                                    validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
+                                } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
                             />
-                            {validationErrors.date && (
-                                <p className="text-red-500 text-sm mt-1">{validationErrors.date}</p>
+                            {validationErrors.creditUnits && (
+                                <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
                             )}
                         </div>
-    
-{/* Practice hours and credit units */}
-<div className="flex gap-4">
-    {/* Practice hours input */}
-    <div className="flex-1">
-        <label className="block text-sm font-medium text-gray-700">Часы практики</label>
-        <input
-            type="number"
-            value={localStatement.practiceHours || ""}
-            onChange={(e) => handleChange(e, "practiceHours")}
-            min="1"
-            readOnly={localStatement.assessmentType === "курсовой проект"}
-            className={`w-full px-2 py-1 border rounded-lg ${
-                validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
-            } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
-        />
-        {validationErrors.practiceHours && (
-            <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
-        )}
-    </div>
-
-    {/* Credit units input */}
-    <div className="flex-1">
-        <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
-        <input
-            type="number"
-            value={localStatement.creditUnits || ""}
-            onChange={(e) => handleChange(e, "creditUnits")}
-            min="1"
-            readOnly={localStatement.assessmentType === "курсовой проект"}
-            className={`w-full px-2 py-1 border rounded-lg ${
-                validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
-            } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
-        />
-        {validationErrors.creditUnits && (
-            <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
-        )}
-    </div>
-</div>
-
-                   
-    
-                               
-
-                    </div>
-    
-                    {/* Action buttons */}
-                    <div className="flex justify-end space-x-4 mt-6">
-                    <button
-                            className="px-4 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
-                            onClick={handleCreate}
-                            disabled={createStatementMutation.isPending}
-                        >
-                            {createStatementMutation.isPending ? "Создание..." : "Создать"}
-                        </button>
-                        <button
-                            className="px-4 py-2 bg-gray-400 text-white rounded-lg shadow-md hover:bg-gray-500 transition"
-                            onClick={onClose}
-                        >
-                            Отменить
-                        </button>
-                        
                     </div>
                 </div>
+
+                {/* Action buttons */}
+                <div className="flex justify-between mt-6">
+                    {/* Кнопка отмены */}
+
+                    {/* Кнопка сохранения */}
+                    <button
+                        className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                        onClick={handleCreate}
+                        disabled={createStatementMutation.isPending}
+                    >
+                        {createStatementMutation.isPending ? (
+                            <>
+                                <span>Создание...</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                                </svg>
+                            </>
+                        ) : (
+                            <>
+                                <span>Создать</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                            </>
+                        )}
+                    </button>
+                </div>
             </div>
-    
-            {/* Modals */}
-            <ConfirmModal
-                isOpen={isConfirmOpen}
-                onClose={() => setIsConfirmOpen(false)}
-                onConfirm={handleCreate}
-                confirmText="Вы действительно хотите создать новую ведомость?"
-            />
-            <WarningModal
-                isOpen={isWarningOpen}
-                onClose={() => setIsWarningOpen(false)}
-                warningText={warningText}
-            />
-        </>
-    );
+        </div>
+
+        {/* Modals */}
+        <ConfirmModal
+            isOpen={isConfirmOpen}
+            onClose={() => setIsConfirmOpen(false)}
+            onConfirm={handleCreate}
+            confirmText="Вы действительно хотите создать новую ведомость?"
+        />
+        <WarningModal
+            isOpen={isWarningOpen}
+            onClose={() => setIsWarningOpen(false)}
+            warningText={warningText}
+        />
+    </>
+);
     
 };
 

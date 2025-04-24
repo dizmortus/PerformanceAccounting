@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FaSearch, FaUsers, FaChevronRight, FaTimes } from 'react-icons/fa';
-import { fetchStudents, fetchDisciplineName } from '../../utils/api';
+import { fetchStudents } from '../../utils/api';
 
 const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, statements, groups }) => {
     const [searchTerm, setSearchTerm] = useState('');
@@ -29,28 +29,6 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
         staleTime: 5 * 60 * 1000,
     });
 
-    const { data: disciplinesMap = {} } = useQuery({
-        queryKey: ['disciplinesMap', statements],
-        queryFn: async () => {
-            const uniqueDisciplineIds = [...new Set(
-                statements?.map(s => s.disciplineId).filter(Boolean) || []
-            )];
-            
-            const disciplinesData = await Promise.all(
-                uniqueDisciplineIds.map(id => fetchDisciplineName(id))
-            );
-            
-            return disciplinesData.reduce((acc, discipline) => {
-                if (discipline?.id && discipline.name) {
-                    acc[discipline.id] = discipline.name;
-                }
-                return acc;
-            }, {});
-        },
-        enabled: isOpen && !!statements?.length,
-        staleTime: Infinity,
-    });
-    
     // Мемоизированные результаты поиска
     const searchResults = useMemo(() => {
         if (!isOpen || !searchTerm.trim()) return groups || [];
@@ -78,11 +56,11 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
             studentMatches.map(student => student.groupId)
         )];
         
-        // 4. Поиск по дисциплинам
+        // 4. Поиск по дисциплинам (теперь используем disciplineName из statements)
         const disciplineGroupIds = [...new Set(
             (statements || [])
                 .filter(statement => {
-                    const disciplineName = disciplinesMap[statement.disciplineId] || '';
+                    const disciplineName = statement.disciplineName || '';
                     return disciplineName.toLowerCase().includes(term);
                 })
                 .map(statement => statement.groupId)
@@ -101,7 +79,7 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
         ].filter((group, index, self) => 
             index === self.findIndex(g => g.id === group.id)
         );
-    }, [searchTerm, groups, allStudents, statements, disciplinesMap, isOpen]);
+    }, [searchTerm, groups, allStudents, statements, isOpen]);
 
     // Мемоизированная информация о совпадениях
     const getMatchInfo = useCallback((group) => {
@@ -136,14 +114,14 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
             };
         }
         
-        // Проверка совпадения по дисциплине
+        // Проверка совпадения по дисциплине (теперь используем disciplineName из statements)
         const matchedDisciplines = (statements || [])
             .filter(s => s?.groupId === group.id)
             .filter(s => {
-                const disciplineName = disciplinesMap[s.disciplineId] || '';
+                const disciplineName = s.disciplineName || '';
                 return disciplineName.toLowerCase().includes(term);
             })
-            .map(s => disciplinesMap[s.disciplineId]);
+            .map(s => s.disciplineName);
         
         if (matchedDisciplines.length > 0) {
             return { 
@@ -154,7 +132,7 @@ const GroupSearchModal = ({ isOpen, onClose, onGroupSelect, selectedGroup, state
         }
         
         return { type: 'unknown', text: '' };
-    }, [searchTerm, allStudents, statements, disciplinesMap]);
+    }, [searchTerm, allStudents, statements]);
 
     if (!isOpen) return null;
 

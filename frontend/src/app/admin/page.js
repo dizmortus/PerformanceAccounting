@@ -12,7 +12,10 @@ import UserProfile from '../../components/UserProfile';
 import UserTable from '../../components/admin/user/UserTable';
 import StatementTable from '../../components/admin/statement/StatementTable';
 import GroupTable from '../../components/admin/group/GroupTable';
-import StudentTable from '../../components/admin/student/StudentTable'; // Add this import
+import StudentTable from '../../components/admin/student/StudentTable';
+import DisciplineTable from '../../components/admin/discipline/DisciplineTable';
+import StatisticsTable from '../../components/admin/statement/StatementStatisticsTable';
+//import PerformanceTable from '../../components/admin/performance/PerformanceTable';
 import { checkAuth } from '../../utils/auth';
 
 export default function AdminDashboard() {
@@ -80,7 +83,7 @@ export default function AdminDashboard() {
 
             <main className="flex-1 bg-opacity-50 relative flex items-center justify-center">
                 {!selectedCategory ? (
-                    <div className="text-2xl font-semibold text-white bg-transparent p-6 rounded-lg">
+                     <div className="text-2xl font-semibold text-black bg-white p-6 rounded-lg shadow-md">
                         Пожалуйста, выберите категорию...
                     </div>
                 ) : (
@@ -107,6 +110,21 @@ export default function AdminDashboard() {
                                 onCancel={handleCancel}
                             />
                         )}
+                        {selectedCategory === 'disciplines' && (
+                            <DisciplineTable 
+                                onCancel={handleCancel}
+                            />
+                        )}
+                        {selectedCategory === 'statistics' && (
+                            <StatisticsTable 
+                                onCancel={handleCancel}
+                            />
+                        )}
+                        {/* {selectedCategory === 'performance' && (
+                            <PerformanceTable 
+                                onCancel={handleCancel}
+                            />
+                        )} */}
                     </>
                 )}
             </main>

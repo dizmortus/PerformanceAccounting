@@ -1,4 +1,5 @@
-import { Student, Group } from "../models/index.js";
+import { Student, Group, Grade } from "../models/index.js";
+import sequelize from '../config/db.js'; // Убрали фигурные скобки, так как используется default export
 import { Specialty } from '../models/index.js'; // Или укажите правильный путь к файлу с моделями
 // Get all students in a group
 export const getStudentsByGroup = async (req, res) => {
@@ -31,16 +32,21 @@ export const getStudentsByGroup = async (req, res) => {
   }
 };
 
-// Create a new student
 export const createStudent = async (req, res) => {
-  const { lastName, firstName, patronymic, groupId } = req.body;
+  const { studentId, lastName, firstName, patronymic, groupId } = req.body;
 
   try {
     // Basic validation
-    if (!lastName || !firstName || !groupId) {
+    if (!studentId || !lastName || !firstName || !groupId) {
       return res.status(400).json({ 
-        message: "Фамилия, имя и ID группы обязательны" 
+        message: "ID студента, фамилия, имя и ID группы обязательны" 
       });
+    }
+
+    // Check if student with this ID already exists
+    const existingStudent = await Student.findOne({ where: { id: studentId } });
+    if (existingStudent) {
+      return res.status(400).json({ message: "Студент с таким ID уже существует" });
     }
 
     // Check group exists
@@ -51,6 +57,7 @@ export const createStudent = async (req, res) => {
 
     // Create student
     const student = await Student.create({
+      id: studentId,
       lastName,
       firstName,
       patronymic: patronymic || null,
@@ -76,42 +83,63 @@ export const createStudent = async (req, res) => {
     });
   }
 };
-
+// Update student
+// Update student
 // Update student
 export const updateStudent = async (req, res) => {
-  const { id } = req.params;
-  const { lastName, firstName, patronymic, groupId } = req.body;
+  const { id: oldId } = req.params;
+  const { id: newId, lastName, firstName, patronymic, groupId } = req.body;
 
   try {
-    const student = await Student.findByPk(id);
+    // Находим студента по старому ID
+    const student = await Student.findByPk(oldId);
     if (!student) {
       return res.status(404).json({ message: "Студент не найден" });
     }
 
-    // Validate group if changing
-    if (groupId && groupId !== student.groupId) {
+    // Проверяем, не занят ли новый ID другим студентом (если ID изменился)
+    if (newId && newId !== oldId) {
+      const existingStudent = await Student.findByPk(newId);
+      if (existingStudent) {
+        return res.status(400).json({ message: "Студент с таким ID уже существует" });
+      }
+    }
+
+    // Проверяем группу
+    if (groupId) {
       const group = await Group.findByPk(groupId);
       if (!group) {
         return res.status(404).json({ message: "Группа не найдена" });
       }
     }
 
-    // Update student
-    await student.update({
-      lastName: lastName || student.lastName,
-      firstName: firstName || student.firstName,
-      patronymic: patronymic !== undefined ? patronymic : student.patronymic,
-      groupId: groupId || student.groupId
-    });
+    // Если ID не меняется - просто обновляем данные
+    if (newId === oldId) {
+      await student.update({
+        lastName,
+        firstName,
+        patronymic: patronymic || null,
+        groupId
+      });
+    } else {
+      // Используем raw query для изменения ID напрямую
+      await Student.sequelize.query(
+        'UPDATE "Cтуденты" SET "ID" = ?, "Фамилия" = ?, "Имя" = ?, "Отчество" = ?, "ID Группы" = ? WHERE "ID" = ?',
+        {
+          replacements: [newId, lastName, firstName, patronymic || null, groupId, oldId],
+          type: Student.sequelize.QueryTypes.UPDATE
+        }
+      );
+    }
 
     res.json({
       message: "Данные студента успешно обновлены",
       student: {
-        id: student.id,
-        lastName: student.lastName,
-        firstName: student.firstName,
-        patronymic: student.patronymic,
-        groupId: student.groupId
+        id: newId,
+        lastName,
+        firstName,
+        patronymic: patronymic || null,
+        groupId
       }
     });
 
@@ -123,21 +151,35 @@ export const updateStudent = async (req, res) => {
     });
   }
 };
-
 // Delete student
 export const deleteStudent = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const student = await Student.findByPk(id);
+    const student = await Student.findByPk(id, {
+      include: [{
+        model: Grade,
+        as: 'grades'
+      }]
+    });
+    
     if (!student) {
       return res.status(404).json({ message: "Студент не найден" });
     }
 
-    // Check for dependencies (e.g., grades, attendance records)
-    // Add your specific dependency checks here if needed
-    
+    // Option 1: Check for grades and prevent deletion if they exist
+    if (student.grades && student.grades.length > 0) {
+      return res.status(400).json({ 
+        message: "Невозможно удалить студента, так как у него есть оценки",
+        details: {
+          gradesCount: student.grades.length
+        }
+      });
+    }
+
+    // Option 2: Delete student with cascade (grades will be automatically deleted)
     await student.destroy();
+    
     res.json({ message: "Студент успешно удален" });
 
   } catch (error) {
@@ -148,7 +190,6 @@ export const deleteStudent = async (req, res) => {
     });
   }
 };
-
 // Check student dependencies (e.g., before deletion)
 export const hasStudentDependencies = async (req, res) => {
   const { studentId } = req.params;
@@ -159,10 +200,9 @@ export const hasStudentDependencies = async (req, res) => {
       return res.status(404).json({ message: "Студент не найден" });
     }
 
-    // Example dependency checks - adjust based on your models
-    const gradesCount = 0; // await student.countGrades(); - implement if needed
-    const attendanceCount = 0; // await student.countAttendance(); - implement if needed
-    
+    const gradesCount = await Grade.count({ where: { studentId } });
+    const attendanceCount = 0; // реализуй позже, если есть посещаемость
+
     const hasDependencies = gradesCount > 0 || attendanceCount > 0;
 
     res.json({
@@ -182,6 +222,7 @@ export const hasStudentDependencies = async (req, res) => {
     });
   }
 };
+
 
 // Get student by ID
 export const getStudentById = async (req, res) => {
