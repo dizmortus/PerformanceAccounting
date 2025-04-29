@@ -1,16 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAllStatements, fetchAllTeachers, fetchAllDisciplines, downloadStatement } from "../../../utils/api";
+import { fetchAllStatements, fetchAllTeachers, fetchAllDisciplines } from "../../../utils/api";
 import EditStatementModal from "./EditStatementModal";
 import CreateStatementModal from "./CreateStatementModal";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import WarningModal from '../../WarningModal';
 import SearchableSelect from '../SearchableSelect';
-
+import EmailSendModal from '../../EmailSendModal';
+import SuccessModal from '../../SuccessModal';
 const StatementTable = ({ onCancel }) => {
     const queryClient = useQueryClient();
+    
     const [editingStatement, setEditingStatement] = useState(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-
+    const [selectedStatementId, setSelectedStatementId] = useState(null);
+    const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+    const [isEmailSendModalOpen, setIsEmailSendModalOpen] = useState(false);
+    const [fileFormat, setFileFormat] = useState('docx'); 
 // В части фильтров изменил:
 const [filters, setFilters] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -39,6 +44,15 @@ const [filters, setFilters] = useState(() => {
         hasFile: ''
     };
 });
+const handleSendByEmail = (format) => {
+    setIsSuccessModalOpen(false);
+    setIsEmailSendModalOpen(true);
+    setFileFormat(format);
+};
+
+const closeEmailSendModal = () => {
+    setIsEmailSendModalOpen(false);
+};
 
     useEffect(() => {
         localStorage.setItem("statements_filters", JSON.stringify(filters));
@@ -99,30 +113,12 @@ const [filters, setFilters] = useState(() => {
         staleTime: 10 * 60 * 1000,
     });
 
-    const downloadMutation = useMutation({
-        mutationFn: downloadStatement,
-        useErrorBoundary: false,
-        onError: (error, statementId) => {
-            if (!error.silent && process.env.NODE_ENV === 'development') {
-                console.warn('Download error:', error.message);
-            }
-            
-            if (error.message.includes("не найден на сервере")) {
-                queryClient.invalidateQueries(['statements']);
-            }
-            
-            setErrorMessage(error.message);
-            setIsErrorModalOpen(true);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries(['statements']);
-        },
-        meta: { suppressErrorLogging: true }
-    });
+  
 
     const handleDownloadFile = (statementId) => {
-        downloadMutation.mutate(statementId);
-    };
+        setSelectedStatementId(statementId);
+        setIsSuccessModalOpen(true);
+      };
 
     const getTeacherFullName = (teacherLogin, full = false) => {
         const teacher = teachers.find((t) => t.login === teacherLogin);
@@ -188,10 +184,10 @@ const [filters, setFilters] = useState(() => {
                 (!filters.semester || statement.semester?.toString() === filters.semester.toString()) &&
                 (!filters.disciplineId || statement.disciplineId === filters.disciplineId) &&
                 (!filters.practiceHours || statement.practiceHours?.toString() === filters.practiceHours.toString()) &&
-                (!filters.date || statement.date === filters.date) && // Точное совпадение даты
+                (!filters.date || statement.date === filters.date) &&
                 (!filters.assessmentType || statement.assessmentType === filters.assessmentType) &&
-                (!filters.hasFile || 
-                    (filters.hasFile === "yes" ? statement.list : !statement.list))
+                (!filters.list || 
+                    (filters.list === "yes" ? statement.list : !statement.list))
             );
         });
     }, [statementsData, filters]);
@@ -239,14 +235,13 @@ const [filters, setFilters] = useState(() => {
             });
         });
     }, [statementsData, filters]);
-    // Добавим options для фильтров даты и файла
-// Исправленный вариант создания dateOptions
+
 const dateOptions = useMemo(() => {
-    const dateMap = new Map(); // Используем Map для устранения дубликатов
+    const dateMap = new Map(); 
     getFilterOptions('date').forEach(statement => {
         if (statement.date) {
             const formatted = formatDate(statement.date);
-            // Используем дату как ключ, чтобы избежать дубликатов
+ 
             dateMap.set(statement.date, { 
                 id: statement.date, 
                 name: formatted 
@@ -578,34 +573,26 @@ const fileOptions = useMemo(() => [
                                                 </td>
                                                 
                                                 {/* Файл */}
-                                                <td
-                                                    className="py-2 px-2 truncate"
-                                                    title={statement.list || 'Нет файла'}
-                                                    onClick={() => statement.list && handleCellClick("Файл", statement.list)}
-                                                >
-                                                    {statement.list ? (
-                                                        <button
-                                                            className="h-[40px] w-full px-2 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition flex items-center justify-center"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDownloadFile(statement.id);
-                                                            }}
-                                                        >
-                                                            <svg
-                                                                xmlns="http://www.w3.org/2000/svg"
-                                                                className="h-4 w-4 mr-1"
-                                                                fill="none"
-                                                                viewBox="0 0 24 24"
-                                                                stroke="currentColor"
-                                                            >
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                                            </svg>
-                                                
-                                                        </button>
-                                                    ) : (
-                                                        "Нет файла"
-                                                    )}
-                                                </td>
+{/* Файл */}
+<td
+    className="py-2 px-2 truncate"
+    title={statement.list || 'Нет файла'}
+    onClick={() => statement.list && handleCellClick("Файл", statement.list)}
+>
+    {statement.list ? (
+        <button
+            className="h-[40px] w-full px-2 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition"
+            onClick={(e) => {
+                e.stopPropagation();
+                handleDownloadFile(statement.id);
+            }}
+        >
+            Файл
+        </button>
+    ) : (
+        "Нет файла"
+    )}
+</td>
                                                 
                                                 {/* Действия */}
                                                 <td 
@@ -669,6 +656,20 @@ const fileOptions = useMemo(() => [
                     </div>
                 </div>
             )}
+<SuccessModal
+  isOpen={isSuccessModalOpen}
+  onClose={() => setIsSuccessModalOpen(false)}
+  onSendByEmail={handleSendByEmail}
+  statementId={selectedStatementId}
+  successText={`Ведомость ${selectedStatementId}`}
+/>
+            
+            <EmailSendModal
+                isOpen={isEmailSendModalOpen}
+                onClose={closeEmailSendModal}
+                statementId={selectedStatementId}
+                fileFormat={fileFormat}
+            />
         </>
     );
 };

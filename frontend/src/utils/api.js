@@ -42,11 +42,11 @@ export const fetchWithAuth = async (url, options = {}) => {
     return res;
 };
 
-export const fetchTeacherStatements = async () => {
-    const response = await fetchWithAuth("/api/statements");
+export const fetchTeacherStatements = async (isArchiveMode = false) => {
+    const url = `/api/statements${isArchiveMode ? '?archive=true' : ''}`;
+    const response = await fetchWithAuth(url);
     return response && response.ok ? response.json() : [];
 };
-
 export const fetchGroups = async (groupIds) => {
     if (groupIds.length === 0) return [];
 
@@ -197,29 +197,6 @@ export const deleteGrades = async ({ statementId, lessonId, studentIds }) => {
       throw error;
     }
   };
-// Скачивание ведомости
-export const downloadStatement = async (statementId) => {
-    const response = await fetchWithAuth(`/api/statements/${statementId}/file`);
-    
-    if (!response.ok) {
-        const errorText = await response.text();
-        // Возвращаем объект ошибки вместо throw
-        return Promise.reject({ 
-            message: errorText || "Файл ведомости не найден",
-            silent: true // Флаг для подавления логов
-        });
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Ведомость_${statementId}.docx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-};
 
 export const fetchAllUsers = async () => {
     try {
@@ -1361,16 +1338,33 @@ export const updateEmail = async (email, emailPassword) => {
     }
 };
 
+
 /**
- * Отправляет ведомость по электронной почте
+ * Отправляет ведомость по электронной почте с выбором формата
  * @param {number} statementId - ID ведомости
  * @param {string[]} recipientEmails - Массив email адресов получателей
- * @param {string} [subject='Ведомость'] - Тема письма (по умолчанию 'Ведомость')
- * @param {string} [messageText='Прикреплена ведомость по дисциплине.'] - Текст письма
+ * @param {Object} [options] - Дополнительные параметры
+ * @param {string} [options.subject='Ведомость'] - Тема письма
+ * @param {string} [options.messageText='Прикреплена ведомость по дисциплине.'] - Текст письма
+ * @param {boolean} [options.asPdf=false] - Отправить как PDF (по умолчанию DOCX)
+ * @param {string} [options.header='Уважаемые коллеги,'] - Заголовок письма
  * @returns {Promise<Object>} - Результат отправки
  */
-export const sendStatementByEmail = async (statementId, recipientEmails, subject = 'Ведомость', messageText = 'Прикреплена ведомость по дисциплине.') => {
+export const sendStatementByEmail = async (
+    statementId, 
+    recipientEmails, 
+    {
+        subject = 'Ведомость',
+        messageText = 'Прикреплена ведомость по дисциплине.',
+        asPdf = false,
+        header = 'Уважаемые коллеги,'
+    } = {}
+) => {
     try {
+        if (!recipientEmails || recipientEmails.length === 0) {
+            throw new Error('no recipients');
+        }
+
         const response = await fetchWithAuth(`/api/statements/${statementId}/send-email`, {
             method: 'POST',
             headers: {
@@ -1379,15 +1373,17 @@ export const sendStatementByEmail = async (statementId, recipientEmails, subject
             body: JSON.stringify({
                 recipientEmails,
                 subject,
-                messageText
+                messageText,
+                header,
+                convertToPdf: asPdf
             })
         });
 
+        // Проверка типа содержимого
         const contentType = response.headers.get('content-type');
-        
         if (!contentType || !contentType.includes('application/json')) {
             const text = await response.text();
-            throw new Error(`Ожидался JSON, но получено: ${text.substring(0, 100)}`);
+            throw new Error(`Invalid content type: ${contentType}, response: ${text.substring(0, 100)}`);
         }
 
         const data = await response.json();
@@ -1399,26 +1395,69 @@ export const sendStatementByEmail = async (statementId, recipientEmails, subject
         return {
             success: true,
             message: data.message || 'Ведомость успешно отправлена',
-            details: data.details
+            details: data.details,
+            format: asPdf ? 'PDF' : 'DOCX'
         };
 
     } catch (error) {
-        console.error(`Ошибка при отправке ведомости ${statementId} по email:`, error);
+        console.error(`Ошибка при отправке ведомости ${statementId} (${asPdf ? 'PDF' : 'DOCX'}):`, error);
         
         // Улучшенные сообщения об ошибках
-        if (error.message.includes('email not configured')) {
-            throw new Error('У преподавателя не настроена почта для отправки');
-        } else if (error.message.includes('no statement file')) {
-            throw new Error('Файл ведомости не найден');
-        } else if (error.message.includes('EAUTH')) {
-            throw new Error('Ошибка аутентификации почты. Проверьте настройки email.');
-        } else if (error.message.includes('no recipients')) {
-            throw new Error('Укажите хотя бы один email получателя');
-        }
+        const userMessages = {
+            'email not configured': 'У преподавателя не настроена почта для отправки',
+            'no statement file': 'Файл ведомости не найден',
+            'EAUTH': 'Ошибка аутентификации почты. Проверьте настройки email.',
+            'no recipients': 'Укажите хотя бы один email получателя',
+            'conversion failed': 'Не удалось конвертировать в PDF. Отправлен DOCX файл.'
+        };
 
-        throw new Error('Не удалось отправить ведомость. Пожалуйста, попробуйте позже.');
+        throw new Error(
+            userMessages[error.message] || 
+            'Не удалось отправить ведомость. Пожалуйста, попробуйте позже.'
+        );
     }
 };
+/**
+ * Скачивание ведомости с возможностью выбора формата
+ * @param {number} statementId - ID ведомости
+ * @param {boolean} [asPdf=false] - Скачать как PDF (по умолчанию DOCX)
+ * @returns {Promise<void>}
+ */
+export const downloadStatement = async (statementId, asPdf = false) => {
+    try {
+        const response = await fetchWithAuth(`/api/statements/${statementId}/file?convertToPdf=${asPdf}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            return Promise.reject({ 
+                message: errorText || "Файл ведомости не найден",
+                silent: true
+            });
+        }
+
+        const contentType = response.headers.get('content-type');
+        const ext = asPdf ? 'pdf' : 'docx';
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        
+        a.href = url;
+        a.download = `Ведомость_${statementId}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Очистка
+        setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }, 100);
+        
+    } catch (error) {
+        console.error(`Ошибка при скачивании ведомости ${statementId} (${asPdf ? 'PDF' : 'DOCX'}):`, error);
+        throw new Error(error.message || 'Не удалось скачать ведомость');
+    }
+};
+
 /**
  * Получает статистику успеваемости студента
  * @param {number} studentId - ID студента

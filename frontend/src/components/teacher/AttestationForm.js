@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useRef, useMemo  } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { submitGrades, generateStatement, fetchAverageGrades, fetchMissedLessonsCount, fetchGrades } from '../../utils/api';
 
@@ -10,7 +10,8 @@ const AttestationForm = ({
   filteredGrades,
   onOpenConfirm,
   onShowWarning,
-  onShowSuccess
+  onShowSuccess,
+  isArchiveMode // Добавлен пропс для режима архива
 }) => {
   const queryClient = useQueryClient();
   const [gradesMap, setGradesMap] = useState(new Map());
@@ -18,26 +19,12 @@ const AttestationForm = ({
   const [focusedStudentIndices, setFocusedStudentIndices] = useState(new Map());
   const listRef = useRef(null);
   const [originalGradesMap, setOriginalGradesMap] = useState(new Map());
-  const [modalOpen, setModalOpen] = useState(false);
 
+  // Получение текущих значений для выбранной ведомости
+  const getCurrentGrades = useCallback(() => {
+    return gradesMap.get(selectedStatementId) || {};
+  }, [gradesMap, selectedStatementId]);
 
-
-// Получение текущих значений для выбранной ведомости
-const getCurrentGrades = useCallback(() => {
-  const grades = gradesMap.get(selectedStatementId) || {};
-
-  console.log('[getCurrentGrades] selectedStatementId:', selectedStatementId);
-  console.log('[getCurrentGrades] gradesMap:', gradesMap);
-  console.log('[getCurrentGrades] grades:', grades);
-
-  return grades;
-}, [gradesMap, selectedStatementId]);
-  const generateStatementMutation = useMutation({
-    mutationFn: generateStatement,
-    onSuccess: () => {
-      onShowSuccess("Ведомость успешно сформирована!");
-    }
-  });
   const getCurrentChangedGrades = useCallback(() => {
     return changedGradesMap.get(selectedStatementId) || {};
   }, [changedGradesMap, selectedStatementId]);
@@ -53,34 +40,168 @@ const getCurrentGrades = useCallback(() => {
       queryClient.invalidateQueries(['attestationAnalytics']);
     }
   });
+
+  const generateStatementMutation = useMutation({
+    mutationFn: generateStatement,
+    onSuccess: () => {
+      onShowSuccess("Ведомость успешно сформирована!");
+    }
+  });
+
+  // Запрос оценок
+  const fetchGradesData = async (statementId, students) => {
+    const studentIds = students.map(student => student.id);
+    return await fetchGrades({ statementId, studentIds });
+  };
+
+// Или альтернативно - используйте везде isLoading вместо loadingGrades:
+const { 
+  data: gradesData, 
+  isLoading, 
+  error: gradesError 
+} = useQuery({
+  queryKey: ['attestationGrades', selectedStatementId, students],
+  queryFn: () => fetchGradesData(selectedStatementId, students),
+  enabled: !!selectedStatementId && students.length > 0,
+  staleTime: 60 * 1000,
+});
+
+  // Обработка данных оценок
+  useEffect(() => {
+    if (!gradesData || !selectedStatementId) return;
+
+    const gradesArray = gradesData.grades || [];
+    const gradesByStudentId = {};
+    const originalGradesByStudentId = {};
+
+    gradesArray.forEach(({ studentId, value }) => {
+      gradesByStudentId[studentId] = value;
+      originalGradesByStudentId[studentId] = value;
+    });
+
+    const initialGrades = {};
+    const initialOriginalGrades = {};
+
+    students.forEach(student => {
+      initialGrades[student.id] = gradesByStudentId[student.id] || "";
+      initialOriginalGrades[student.id] = originalGradesByStudentId[student.id] || "";
+    });
+
+    // Загружаем сохраненные локально изменения
+    const savedGrades = JSON.parse(
+      localStorage.getItem(`attestation_grades_${selectedStatementId}`) || '{}'
+    );
+
+    const mergedGrades = { ...initialGrades };
+    const newChangedGrades = {};
+
+    Object.keys(savedGrades).forEach(studentId => {
+      if (savedGrades[studentId] !== initialOriginalGrades[studentId]) {
+        mergedGrades[studentId] = savedGrades[studentId];
+        newChangedGrades[studentId] = true;
+      }
+    });
+
+    setGradesMap(prev => new Map(prev).set(selectedStatementId, mergedGrades));
+    setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, initialOriginalGrades));
+    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, newChangedGrades));
+  }, [gradesData, selectedStatementId, students]);
+
+  // Функция сохранения в localStorage
+  const saveGradesToLocalStorage = (statementId, grades) => {
+    localStorage.setItem(`attestation_grades_${statementId}`, JSON.stringify(grades));
+  };
+
+  // Обработчик изменения оценки (заблокирован в архивном режиме)
+  const handleGradeChange = useCallback((studentId, value) => {
+    if (isArchiveMode) return; // Блокируем изменения в архивном режиме
+    
+    const newGrades = { ...getCurrentGrades(), [studentId]: value };
+    
+    setGradesMap(prev => new Map(prev).set(selectedStatementId, newGrades));
+    saveGradesToLocalStorage(selectedStatementId, newGrades);
+    
+    setChangedGradesMap(prev => {
+      const currentChangedGrades = prev.get(selectedStatementId) || {};
+      const newChangedGrades = { ...currentChangedGrades };
+      
+      const originalGrades = originalGradesMap.get(selectedStatementId) || {};
+      if (originalGrades[studentId] !== value) {
+        newChangedGrades[studentId] = true;
+      } else {
+        delete newChangedGrades[studentId];
+      }
+      
+      return new Map(prev).set(selectedStatementId, newChangedGrades);
+    });
+  }, [selectedStatementId, getCurrentGrades, originalGradesMap, isArchiveMode]);
+
+  // Обработчик отмены
+  const handleCancel = useCallback(() => {
+    const currentChangedGrades = getCurrentChangedGrades();
+    if (Object.keys(currentChangedGrades).length > 0) {
+      const originalGrades = originalGradesMap.get(selectedStatementId) || {};
+      setGradesMap(prev => new Map(prev).set(selectedStatementId, originalGrades));
+      setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
+      localStorage.removeItem(`attestation_grades_${selectedStatementId}`);
+    } else {
+      handleCancelSelection();
+    }
+  }, [selectedStatementId, originalGradesMap, handleCancelSelection, getCurrentChangedGrades]);
+
+  // Обработчик сохранения (заблокирован в архивном режиме)
+  const handleSubmit = useCallback(async () => {
+    if (isArchiveMode) return; // Блокируем сохранение в архивном режиме
+    
+    const currentGrades = getCurrentGrades();
+    const filledGrades = {};
+    
+    Object.entries(currentGrades).forEach(([studentId, grade]) => {
+      if (grade !== "") {
+        filledGrades[studentId] = grade;
+      }
+    });
+
+    try {
+      await submitGradesMutation.mutateAsync({
+        statementId: selectedStatementId,
+        grades: filledGrades
+      });
+
+      setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, currentGrades));
+      setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
+      localStorage.removeItem(`attestation_grades_${selectedStatementId}`);
+
+      const allGradesFilled = students.every(student => currentGrades[student.id]);
+      
+      if (allGradesFilled) {
+        onOpenConfirm(
+          async () => {
+            await generateStatementMutation.mutateAsync(selectedStatementId);
+            onShowSuccess("Оценки сохранены и ведомость сформирована!");
+          },
+          "Подтвердите создание ведомости",
+          "Все оценки заполнены. Создать ведомость?",
+          true
+        );
+      }
+    } catch (error) {
+      console.error("Ошибка при сохранении оценок:", error);
+      onShowWarning(`Ошибка: ${error.message}`);
+    }
+  }, [getCurrentGrades, students, selectedStatementId, onOpenConfirm, onShowWarning, onShowSuccess, submitGradesMutation, generateStatementMutation, isArchiveMode]);
+
+  // Обработчик для кнопки "Файл" в архивном режиме
+  const handleFileButtonClick = useCallback(() => {
+    onShowSuccess("Файл ведомости готов к скачиванию");
+  }, [onShowSuccess]);
+
 // Получаем текущие оригинальные оценки
 const originalGrades = useMemo(
   () => originalGradesMap.get(selectedStatementId) || {},
   [originalGradesMap, selectedStatementId]
 );
-const fetchGradesData = async (statementId, students) => {
-  console.log('Starting grades fetch with statementId:', statementId, 'and students:', students);
-  try {
-    const studentIds = students.map(student => student.id);
-    console.log('Fetching grades for student IDs:', studentIds);
-    const result = await fetchGrades({
-      statementId,
-      studentIds
-    });
-    console.log('Grades API response:', result);
-    return result;
-  } catch (error) {
-    console.error('Error fetching grades:', error);
-    throw error;
-  }
-};
 
-const { data: gradesData, isLoading: loadingGrades, error: gradesError } = useQuery({
-  queryKey: ['attestationGrades', selectedStatementId, students],
-  queryFn: () => fetchGradesData(selectedStatementId, students),
-  enabled: !!selectedStatementId && students.length > 0,
-  staleTime: 60 * 1000, // 1 minute stale time
-});
 
 // Обработка успешного получения данных
 useEffect(() => {
@@ -136,94 +257,6 @@ useEffect(() => {
 }, [gradesError]);
 
 
-
-// Функция сохранения в localStorage
-const saveGradesToLocalStorage = (statementId, grades) => {
-  localStorage.setItem(`attestation_grades_${statementId}`, JSON.stringify(grades));
-};
-
-// Обновленный обработчик изменения оценки
-const handleGradeChange = useCallback((studentId, value) => {
-  const newGrades = { ...getCurrentGrades(), [studentId]: value };
-  
-  // Сохраняем в state и localStorage
-  setGradesMap(prev => new Map(prev).set(selectedStatementId, newGrades));
-  saveGradesToLocalStorage(selectedStatementId, newGrades);
-  
-  // Обновляем changedGradesMap
-  setChangedGradesMap(prev => {
-    const currentChangedGrades = prev.get(selectedStatementId) || {};
-    const newChangedGrades = { ...currentChangedGrades };
-    
-    if (originalGrades[studentId] !== value) {
-      newChangedGrades[studentId] = true;
-    } else {
-      delete newChangedGrades[studentId];
-    }
-    
-    return new Map(prev).set(selectedStatementId, newChangedGrades);
-  });
-}, [selectedStatementId, getCurrentGrades, originalGrades]);
-
-// Обновленный обработчик отмены
-const handleCancel = useCallback(() => {
-  const currentChangedGrades = getCurrentChangedGrades();
-  if (Object.keys(currentChangedGrades).length > 0) {
-    // Восстанавливаем оригинальные оценки
-    setGradesMap(prev => new Map(prev).set(selectedStatementId, originalGrades));
-    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
-    
-    // Удаляем из localStorage
-    localStorage.removeItem(`attestation_grades_${selectedStatementId}`);
-  } else {
-    handleCancelSelection();
-  }
-}, [selectedStatementId, originalGrades, handleCancelSelection, getCurrentChangedGrades]);
-
-// Обновленный обработчик сохранения
-const handleSubmit = useCallback(async () => {
-  const currentGrades = getCurrentGrades();
-  const filledGrades = {};
-  
-  Object.entries(currentGrades).forEach(([studentId, grade]) => {
-    if (grade !== "") {
-      filledGrades[studentId] = grade;
-    }
-  });
-
-  try {
-    await submitGradesMutation.mutateAsync({
-      statementId: selectedStatementId,
-      grades: filledGrades
-    });
-
-    // После успешного сохранения обновляем оригинальные оценки
-    setOriginalGradesMap(prev => new Map(prev).set(selectedStatementId, currentGrades));
-    setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
-    
-    // Удаляем из localStorage
-    localStorage.removeItem(`attestation_grades_${selectedStatementId}`);
-
-    const allGradesFilled = students.every(student => currentGrades[student.id]);
-    
-    if (allGradesFilled) {
-      onOpenConfirm(
-        async () => {
-          await generateStatementMutation.mutateAsync(selectedStatementId);
-          onShowSuccess("Оценки сохранены и ведомость сформирована!");
-        },
-        "Подтвердите создание ведомости",
-        "Все оценки заполнены. Создать ведомость?",
-        true
-      );
-    }
-  } catch (error) {
-    console.error("Ошибка при сохранении оценок:", error);
-    onShowWarning(`Ошибка: ${error.message}`);
-  }
-}, [getCurrentGrades, students, selectedStatementId, onOpenConfirm, onShowWarning, onShowSuccess, submitGradesMutation, generateStatementMutation]);
-  
-
   // Запросы аналитики с React Query
   const { data: analytics, isLoading: loadingAnalytics } = useQuery({
     queryKey: ['attestationAnalytics', selectedStatementId],
@@ -237,8 +270,6 @@ const handleSubmit = useCallback(async () => {
     enabled: !!selectedStatementId,
     staleTime: 5 * 60 * 1000,
   });
-
-  
 
 
 
@@ -397,14 +428,14 @@ useEffect(() => {
 }, [currentFocusedIndex, students, currentGrades, filteredGrades, handleGradeChange, checkModalOpen]);
 
 
-  if (loadingGrades) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">Загрузка оценок...</div>
-      </div>
-    );
-  }
-
+// Тогда в условии загрузки:
+if (isLoading) {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-gray-500">Загрузка оценок...</div>
+    </div>
+  );
+}
   return (
     <div className="flex h-full" style={{ height: 'calc(100vh - 10rem)' }}>
       {/* Основной список студентов */}
@@ -417,7 +448,9 @@ useEffect(() => {
                 className={`p-3 border rounded-lg shadow-sm hover:shadow-md transition ${
                   index % 2 === 0 ? 'bg-gray-100' : 'bg-gray-50'
                 } ${
-                  currentChangedGrades[student.id] ? 'border-l-4 border-teal-500' : 'border-gray-200'
+                  !isArchiveMode && currentChangedGrades[student.id] 
+                    ? 'border-l-4 border-teal-500' 
+                    : 'border-gray-200'
                 } ${index === currentFocusedIndex ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}
                 onClick={() => {
                   setFocusedStudentIndices(prev => new Map(prev).set(selectedStatementId, index));
@@ -445,7 +478,7 @@ useEffect(() => {
                     </div>
                   </div>
                   <div className={`w-36 h-10 flex items-center justify-center rounded border ${
-                    currentChangedGrades[student.id] 
+                    !isArchiveMode && currentChangedGrades[student.id] 
                       ? 'bg-teal-50 border-teal-500 shadow-sm' 
                       : 'bg-white border-gray-300 shadow-sm'
                   } text-gray-900 font-medium text-sm`}>
@@ -458,7 +491,7 @@ useEffect(() => {
         </div>
       </div>
   
-      {/* Панель оценок */}
+      {/* Панель действий */}
       <div className="w-40 flex flex-col border-l border-gray-300 bg-gray-100">
         <div className="overflow-y-auto p-3" style={{ height: 'calc(100vh - 10rem - 80px)' }}>
           <div className="mb-4">
@@ -468,23 +501,15 @@ useEffect(() => {
             </div>
           </div>
   
-          <div className="mb-4">
-            <h3 className="text-xs font-semibold text-gray-700 mb-2">Выставить оценку</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {filteredGrades.map((grade, index) => {
-                const words = grade.split(/\s+/);
-                const allWordsShort = words.every(word => word.length < 7);
-                const nextGrade = filteredGrades[index + 1];
-                const nextHasLongWord = nextGrade?.split(/\s+/).some(word => word.length >= 7);
-                const isFirstInRow = index % 2 === 0;
-                const hasLongWord = words.some(word => word.length >= 7);
-                const spanClass = (hasLongWord || (isFirstInRow && allWordsShort && nextHasLongWord))
-                  ? 'col-span-2' : '';
-  
-                return (
+          {/* Панель выставления оценок (скрыта в архивном режиме) */}
+          {!isArchiveMode && (
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">Выставить оценку</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {filteredGrades.map((grade, index) => (
                   <button
                     key={grade + index}
-                    className={`${spanClass} w-full h-[40px] flex items-center justify-center bg-blue-500 hover:bg-blue-600 rounded-md text-sm font-medium text-white shadow-md transition-colors leading-none`}
+                    className="w-full h-[40px] flex items-center justify-center bg-blue-500 hover:bg-blue-600 rounded-md text-sm font-medium text-white shadow-md transition-colors leading-none"
                     onClick={() => {
                       const studentId = students[currentFocusedIndex]?.id;
                       if (studentId) handleGradeChange(studentId, grade);
@@ -492,41 +517,54 @@ useEffect(() => {
                   >
                     {grade === 'н' ? 'Не явился' : grade}
                   </button>
-                );
-              })}
-  
-              <button
-                className="col-span-2 w-full h-[40px] rounded-md text-sm font-medium shadow-sm transition-colors flex items-center justify-center bg-gray-400 hover:bg-gray-500 text-white leading-none"
-                onClick={() => {
-                  const studentId = students[currentFocusedIndex]?.id;
-                  if (studentId) handleGradeChange(studentId, '');
-                }}
-              >
-                Очистить
-              </button>
+                ))}
+                <button
+                  className="col-span-2 w-full h-[40px] rounded-md text-sm font-medium shadow-sm transition-colors flex items-center justify-center bg-gray-400 hover:bg-gray-500 text-white leading-none"
+                  onClick={() => {
+                    const studentId = students[currentFocusedIndex]?.id;
+                    if (studentId) handleGradeChange(studentId, '');
+                  }}
+                >
+                  Очистить
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
   
         <div className="p-2 pt-2 bg-gray-100 border-t border-gray-300 mt-auto space-y-2">
-          <button 
-            className={`w-full h-[40px] text-sm font-medium rounded-md transition-colors ${
-              hasChanges ? 'bg-teal-500 hover:bg-teal-600 text-white shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
-            onClick={handleSubmit}
-            disabled={!hasChanges || isProcessing}
-          >
-            {isProcessing ? 'Сохранение...' : 'Принять'}
-          </button>
-          <button 
-            className={`w-full h-[40px] text-sm font-medium rounded-md transition-colors ${
-              hasChanges ? 'bg-gray-500 hover:bg-gray-600 text-white shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
-            onClick={handleCancel}
-            disabled={!hasChanges || isProcessing}
-          >
-            Отменить
-          </button>
+          {isArchiveMode ? (
+                <>
+            <button 
+              className="w-full h-[40px] bg-teal-500 hover:bg-teal-600 text-white text-sm font-medium rounded-md shadow transition-colors"
+              onClick={handleFileButtonClick}
+            >
+              Файл
+            </button>
+            </>
+            
+          ) : (
+            <>
+              <button 
+                className={`w-full h-[40px] text-sm font-medium rounded-md transition-colors ${
+                  hasChanges ? 'bg-teal-500 hover:bg-teal-600 text-white shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+                onClick={handleSubmit}
+                disabled={!hasChanges || isProcessing}
+              >
+                {isProcessing ? 'Сохранение...' : 'Принять'}
+              </button>
+              <button 
+                className={`w-full h-[40px] text-sm font-medium rounded-md transition-colors ${
+                  hasChanges ? 'bg-gray-500 hover:bg-gray-600 text-white shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+                onClick={handleCancel}
+                disabled={!hasChanges || isProcessing}
+              >
+                Отменить
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

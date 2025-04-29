@@ -6,9 +6,14 @@ import { Lesson, Grade, Student } from "../models/index.js";
 /**
  * Получение ведомостей преподавателя (как основного, так и преподавателя занятий)
  */
+/**
+ * Получение ведомостей преподавателя (как основного, так и преподавателя занятий)
+ * @param {boolean} archive - Если true, возвращаются только ведомости с файлами где преподаватель основной
+ */
 export const getTeacherStatements = async (req, res) => {
     try {
         const { login } = req.user;
+        const { archive } = req.query; // Получаем параметр archive из query string
         const now = new Date();
         const currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -56,59 +61,76 @@ export const getTeacherStatements = async (req, res) => {
         const result = statements.map(statement => {
             const isMainTeacher = statement.teacherLogin === login;
             const isClassTeacher = statement.classTeacherLogin === login;
-            const hasNoList = !statement.list || statement.list === '[]';
             const isExamType = ['зачет', 'экзамен', 'дифференцированный зачет'].includes(statement.assessmentType);
             const isPracticeType = ['практика', 'курсовой проект'].includes(statement.assessmentType);
+
+            // Проверяем наличие файла (list)
+            const hasFile = statement.list && statement.list !== '[]' && statement.list !== '';
+            const hasNoList = !hasFile;
 
             // Определяем типы ведомости
             const types = [];
             
-            // Проверка для преподавателя занятий (learning)
-            if (isClassTeacher && isExamType) {
-                const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
-                if (currentSemester === statement.semester && hasNoList) {
-                    types.push('learning');
+            // Режим архива - только ведомости с файлами где преподаватель основной
+            if (archive === 'true') {
+                if (isMainTeacher && hasFile) {
+                    types.push('main');
                 }
-            }
-
-            // Проверка для основного преподавателя (main)
-            if (isMainTeacher) {
-                if (isExamType && statement.date) {
-                    const statementDate = new Date(statement.date);
-                    const normalizedDate = new Date(
-                        statementDate.getFullYear(),
-                        statementDate.getMonth(),
-                        statementDate.getDate()
-                    );
-                    
-                    if (normalizedDate.getTime() === currentDate.getTime() && hasNoList) {
-                        types.push('main');
-                    }
-                } 
-                else if (isPracticeType) {
+                // В режиме архива learning не возвращаем вообще
+            } 
+            // Обычный режим
+            else {
+                // Проверка для преподавателя занятий (learning)
+                if (isClassTeacher && isExamType) {
                     const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
                     if (currentSemester === statement.semester && hasNoList) {
-                        types.push('main');
+                        types.push('learning');
+                    }
+                }
+
+                // Проверка для основного преподавателя (main)
+                if (isMainTeacher) {
+                    if (isExamType && statement.date) {
+                        const statementDate = new Date(statement.date);
+                        const normalizedDate = new Date(
+                            statementDate.getFullYear(),
+                            statementDate.getMonth(),
+                            statementDate.getDate()
+                        );
+                        
+                        if (normalizedDate.getTime() === currentDate.getTime() && hasNoList) {
+                            types.push('main');
+                        }
+                    } 
+                    else if (isPracticeType) {
+                        const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
+                        if (currentSemester === statement.semester && hasNoList) {
+                            types.push('main');
+                        }
                     }
                 }
             }
 
-            // Возвращаем ведомость с информацией о типах
             return {
                 ...statement.get({ plain: true }),
                 disciplineName: statement.discipline?.name,
-                statementTypes: types, // Может содержать оба типа
-                isValid: types.length > 0 // Флаг валидности
+                statementTypes: types,
+                isValid: types.length > 0
             };
-        }).filter(statement => statement.isValid); // Фильтруем только валидные ведомости
+        }).filter(statement => statement.isValid);
 
-        // Логируем результат
-        console.log('Обработанные ведомости:', result.map(s => ({
-            id: s.id,
-            types: s.statementTypes,
-            discipline: s.disciplineName,
-            semester: s.semester,
-            assessmentType: s.assessmentType
+        // Улучшенное логирование
+        console.log(`Режим архива: ${archive === 'true'}`);
+        console.log('Результат обработки ведомостей:');
+        console.table(result.map(s => ({
+            ID: s.id,
+            Типы: s.statementTypes.join(', '),
+            Дисциплина: s.disciplineName,
+            Семестр: s.semester,
+            Тип_аттестации: s.assessmentType,
+            Файл: s.list ? 'есть' : 'отсутствует',
+            Основной_преподаватель: s.teacherLogin === login ? 'да' : 'нет',
+            Преподаватель_занятий: s.classTeacherLogin === login ? 'да' : 'нет'
         })));
 
         res.json(result);
@@ -117,7 +139,6 @@ export const getTeacherStatements = async (req, res) => {
         res.status(500).json({ error: "Ошибка сервера" });
     }
 };
-
 /**
  * Проверка наличия ведомостей у преподавателя (как основного, так и преподавателя занятий)
  */

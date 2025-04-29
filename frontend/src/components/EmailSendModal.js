@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { sendStatementByEmail, fetchAllUsers } from '../../utils/api';
-import SearchableSelect from '../admin/SearchableSelect';
+import { sendStatementByEmail, fetchAllUsers } from '../utils/api';
+import SearchableSelect from './admin/SearchableSelect';
 
 const EmailSendModal = ({ 
   isOpen, 
   onClose,
   statementId,
+  fileFormat, // Добавлен пропс для формата файла
   initialRecipients = '',
   initialSubject = 'Ведомость',
   initialHeader = 'Уважаемые коллеги,',
@@ -146,9 +147,12 @@ const EmailSendModal = ({
       const result = await sendStatementByEmail(
         statementId,
         uniqueRecipients,
-        subject,
-        emailText,
-        header
+        { // Изменено на объект параметров
+          subject,
+          messageText: emailText,
+          header,
+          asPdf: fileFormat === 'pdf' // Передаем выбранный формат
+        }
       );
   
       if (result.success) {

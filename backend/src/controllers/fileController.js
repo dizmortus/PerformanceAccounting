@@ -185,49 +185,167 @@ export const generateStatementDocument = async (statementId) => {
         throw new Error("Ошибка генерации ведомости");
     }
 };
-export const getStatementFile = async (req, res) => {
+
+
+
+
+
+
+
+import { exec } from 'child_process';
+import util from 'util';
+const execPromise = util.promisify(exec);
+
+/**
+ * Конвертирует DOCX в PDF с использованием Microsoft Print to PDF
+ * @param {string} docxPath - Путь к исходному DOCX файлу
+ * @returns {Promise<string>} Путь к созданному PDF файлу
+ */
+const convertDocxToPdf = async (docxPath) => {
+    console.log(`[CONVERT] Начало конвертации DOCX в PDF: ${docxPath}`);
+    
+    // Создаем папку templates, если ее нет
+    const templatesDir = path.join(__dirname, '..', '..', 'templates');
+    if (!fs.existsSync(templatesDir)) {
+        fs.mkdirSync(templatesDir, { recursive: true });
+    }
+    
+    const pdfFilename = path.basename(docxPath).replace(/\.docx$/, '.pdf');
+    const pdfPath = path.join(templatesDir, pdfFilename);
+    
     try {
-        const { statementId } = req.params;
-        const statement = await Statement.findByPk(statementId);
+        if (!fs.existsSync(docxPath)) {
+            throw new Error(`Исходный DOCX файл не найден по пути: ${docxPath}`);
+        }
+
+        console.log(`[CONVERT] Создаем команду PowerShell для конвертации`);
+        const command = `powershell -Command "$word = New-Object -ComObject Word.Application; ` +
+                       `$doc = $word.Documents.Open('${docxPath.replace(/\\/g, '\\\\')}'); ` +
+                       `$doc.ExportAsFixedFormat('${pdfPath.replace(/\\/g, '\\\\')}', 17); ` +
+                       `$doc.Close(); $word.Quit()"`;
         
-        if (!statement) {
-            res.status(404).setHeader('Content-Type', 'text/plain');
-            return res.send("Ведомость не найдена в базе данных");
-        }
-
-        if (!statement.list) {
-            res.status(404).setHeader('Content-Type', 'text/plain');
-            return res.send("Файл ведомости не указан в базе данных");
-        }
-
-        const filePath = path.join(__dirname, "..", "..", statement.list);
+        console.log(`[CONVERT] Выполняем команду PowerShell`);
+        const { stdout, stderr } = await execPromise(command);
         
-        if (!fs.existsSync(filePath)) {
-            // Удаляем путь к файлу из базы данных, так как файл не существует
-            await Statement.update(
-                { list: null },
-                { where: { id: statementId } }
-            );
-            
-            res.status(404).setHeader('Content-Type', 'text/plain');
-            return res.send("Файл ведомости не найден на сервере");
+        if (stderr) {
+            console.error(`[CONVERT] Ошибка в stderr: ${stderr}`);
         }
 
-        const safeFilename = `Ведомость_${statementId}.docx`.replace(/[^\w.-]/g, '_');
-        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+        console.log(`[CONVERT] Проверяем существование PDF файла: ${pdfPath}`);
+        if (!fs.existsSync(pdfPath)) {
+            throw new Error(`PDF файл не был создан по пути: ${pdfPath}`);
+        }
 
-        const file = fs.createReadStream(filePath);
-        file.pipe(res);
+        console.log(`[CONVERT] Конвертация успешно завершена`);
+        return pdfPath;
     } catch (error) {
-        console.error(`Ошибка при получении файла ведомости:`, error);
-        res.status(500).setHeader('Content-Type', 'text/plain');
-        res.send("Внутренняя ошибка сервера при получении файла");
+        console.error(`[CONVERT] Ошибка конвертации:`, error);
+        if (fs.existsSync(pdfPath)) {
+            console.log(`[CONVERT] Удаляем частично созданный PDF файл`);
+            fs.unlinkSync(pdfPath);
+        }
+        throw error;
     }
 };
 
+const cleanupPdfFile = (filePath) => {
+    if (filePath && fs.existsSync(filePath)) {
+        try {
+            console.log(`[CLEANUP] Удаляем временный PDF файл: ${filePath}`);
+            fs.unlinkSync(filePath);
+        } catch (error) {
+            console.error(`[CLEANUP] Ошибка при удалении файла: ${error}`);
+        }
+    }
+};
 
+export const getStatementFile = async (req, res) => {
+    console.log(`[GET FILE] Запрос файла ведомости: ${req.params.statementId}`);
+    console.log(`[GET FILE] Параметры запроса:`, req.query);
+    
+    let tempPdfPath = null;
+    
+    try {
+        const { statementId } = req.params;
+        const { convertToPdf } = req.query;
+        
+        console.log(`[GET FILE] Ищем ведомость в БД: ${statementId}`);
+        const statement = await Statement.findByPk(statementId);
+        
+        if (!statement) {
+            console.error(`[GET FILE] Ведомость не найдена: ${statementId}`);
+            return res.status(404).setHeader('Content-Type', 'text/plain')
+                      .send("Ведомость не найдена в базе данных");
+        }
 
+        if (!statement.list) {
+            console.error(`[GET FILE] Путь к файлу не указан для ведомости: ${statementId}`);
+            return res.status(404).setHeader('Content-Type', 'text/plain')
+                      .send("Файл ведомости не указан в базе данных");
+        }
+
+        let filePath = path.join(__dirname, "..", "..", statement.list);
+        let isPdf = false;
+        
+        console.log(`[GET FILE] Проверяем существование файла: ${filePath}`);
+        if (!fs.existsSync(filePath)) {
+            console.error(`[GET FILE] Файл не найден на сервере: ${filePath}`);
+            await Statement.update({ list: null }, { where: { id: statementId } });
+            return res.status(404).setHeader('Content-Type', 'text/plain')
+                      .send("Файл ведомости не найден на сервере");
+        }
+
+        // Конвертация в PDF если требуется
+        if (convertToPdf && convertToPdf.toLowerCase() === 'true') {
+            console.log(`[GET FILE] Запрошена конвертация в PDF`);
+            try {
+                tempPdfPath = await convertDocxToPdf(filePath);
+                if (fs.existsSync(tempPdfPath)) {
+                    console.log(`[GET FILE] PDF успешно создан: ${tempPdfPath}`);
+                    filePath = tempPdfPath;
+                    isPdf = true;
+                } else {
+                    console.error(`[GET FILE] PDF файл не создан после конвертации`);
+                }
+            } catch (error) {
+                console.error(`[GET FILE] Ошибка конвертации, используем DOCX:`, error);
+            }
+        } else {
+            console.log(`[GET FILE] Конвертация в PDF не запрошена`);
+        }
+
+        const ext = isPdf ? 'pdf' : 'docx';
+        const safeFilename = `Ведомость_${statementId}.${ext}`.replace(/[^\w.-]/g, '_');
+        
+        console.log(`[GET FILE] Отправка файла: ${filePath}`);
+        console.log(`[GET FILE] Формат файла: ${ext}`);
+        console.log(`[GET FILE] Имя файла: ${safeFilename}`);
+        
+        res.setHeader("Content-Type", 
+            isPdf ? "application/pdf" 
+                  : "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        
+        res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+        
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+        
+        // Удаляем временный PDF файл после завершения отправки
+        fileStream.on('end', () => {
+            if (tempPdfPath) {
+                cleanupPdfFile(tempPdfPath);
+            }
+        });
+        
+    } catch (error) {
+        console.error(`[GET FILE] Критическая ошибка:`, error);
+        if (tempPdfPath) {
+            cleanupPdfFile(tempPdfPath);
+        }
+        res.status(500).setHeader('Content-Type', 'text/plain')
+           .send("Внутренняя ошибка сервера при получении файла");
+    }
+};
 
 // Функции для шифрования/дешифрования
 const algorithm = 'aes-256-cbc';
@@ -254,11 +372,13 @@ export const sendStatementByEmail = async (req, res) => {
         recipientEmails, 
         subject = 'Ведомость', 
         messageText = 'Прикреплена ведомость по дисциплине.',
-        header = 'Уважаемые коллеги,' // Новое поле - заголовок письма
+        header = 'Уважаемые коллеги,',
+        convertToPdf = false
     } = req.body;
 
+    let tempPdfPath = null;
+
     try {
-        // Валидация
         if (!Array.isArray(recipientEmails) || recipientEmails.length === 0) {
             return res.status(400).json({ 
                 success: false, 
@@ -266,7 +386,6 @@ export const sendStatementByEmail = async (req, res) => {
             });
         }
 
-        // Получаем ведомость и преподавателя
         const statement = await Statement.findOne({
             where: { id: statementId },
             include: [{
@@ -295,18 +414,30 @@ export const sendStatementByEmail = async (req, res) => {
             });
         }
 
-        // Читаем файл ведомости
-        const fileContent = await fs.promises.readFile(statement.list);
+        let filePath = path.join(__dirname, "..", "..", statement.list);
+        let fileName = path.basename(filePath);
+        let fileContent, contentType;
 
-        // Дешифруем пароль перед использованием
+        // Конвертация в PDF если требуется
+        if (convertToPdf) {
+            try {
+                tempPdfPath = await convertDocxToPdf(filePath);
+                fileContent = await fs.promises.readFile(tempPdfPath);
+                fileName = fileName.replace(/\.docx$/, '.pdf');
+                contentType = 'application/pdf';
+            } catch (error) {
+                console.error('Ошибка конвертации, отправляю оригинальный DOCX', error);
+                fileContent = await fs.promises.readFile(filePath);
+                contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            }
+        } else {
+            fileContent = await fs.promises.readFile(filePath);
+            contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        }
+
+        // Дешифруем пароль и отправляем письмо
         let decryptedPassword = decrypt(statement.teacher.emailPassword);
-
-        // Формируем имя отправителя в формате "Фамилия И.О."
-        const { lastName, firstName, patronymic } = statement.teacher;
-        const initials = `${firstName ? firstName.charAt(0) + '.' : ''}${patronymic ? patronymic.charAt(0) + '.' : ''}`;
-        const senderName = `${lastName} ${initials}`.trim();
-
-        // Настраиваем SMTP транспортер
+        
         const transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || 'smtp.gmail.com',
             port: parseInt(process.env.SMTP_PORT) || 465,
@@ -317,63 +448,47 @@ export const sendStatementByEmail = async (req, res) => {
             },
             tls: {
                 rejectUnauthorized: process.env.NODE_ENV !== 'development'
-            },
-            logger: true,
-            debug: true
+            }
         });
 
-        // Формируем полный текст письма с заголовком
-        const fullMessageText = `${header}\n\n${messageText}`;
-// Получаем оригинальное имя файла из пути
-const originalFileName = path.basename(statement.list);
+        const { lastName, firstName, patronymic } = statement.teacher;
+        const initials = `${firstName ? firstName.charAt(0) + '.' : ''}${patronymic ? patronymic.charAt(0) + '.' : ''}`;
+        const senderName = `${lastName} ${initials}`.trim();
 
-        // Отправляем письмо
         const info = await transporter.sendMail({
-            from: {
-                name: senderName,
-                address: statement.teacher.email
-            },
+            from: { name: senderName, address: statement.teacher.email },
             to: recipientEmails.join(', '),
             subject: subject,
-            text: fullMessageText, // Используем текст с заголовком
+            text: `${header}\n\n${messageText}`,
             attachments: [{
-                filename: originalFileName, // Используем оригинальное имя
+                filename: fileName,
                 content: fileContent,
-                contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                contentType: contentType
             }]
         });
 
-        // Обновляем дату отправки
         await statement.update({ date: new Date() });
-
-        // Очищаем память от дешифрованного пароля
         decryptedPassword = null;
 
         res.json({
             success: true,
             message: "Ведомость успешно отправлена",
             details: {
-                messageId: info.messageId,
-                accepted: info.accepted,
-                rejected: info.rejected,
-                header: header // Возвращаем использованный заголовок в ответе
+                format: convertToPdf ? 'PDF' : 'DOCX',
+                messageId: info.messageId
             }
         });
 
     } catch (error) {
         console.error("Ошибка отправки:", error);
-        
-        let errorMessage = "Ошибка при отправке ведомости";
-        if (error.code === 'EAUTH') {
-            errorMessage = "Ошибка аутентификации. Проверьте email и пароль.";
-        } else if (error.code === 'ENOENT') {
-            errorMessage = "Файл ведомости не найден";
-        }
-
         res.status(500).json({
             success: false,
-            error: errorMessage,
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: process.env.NODE_ENV === 'development' ? error.message : "Ошибка при отправке ведомости"
         });
+    } finally {
+        // Удаляем временный PDF файл после отправки
+        if (tempPdfPath) {
+            cleanupPdfFile(tempPdfPath);
+        }
     }
 };

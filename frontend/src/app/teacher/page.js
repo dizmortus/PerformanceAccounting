@@ -1,5 +1,5 @@
-"use client";
-import { useCallback, useEffect, useState,useMemo , useRef } from 'react';
+'use client';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkAuth } from '../../utils/auth';
@@ -13,36 +13,60 @@ export default function TeacherDashboard() {
     const router = useRouter();
     const queryClient = useQueryClient();
     
-    // Состояния UI
     const [searchOpen, setSearchOpen] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
     const [selectedGroup, setSelectedGroup] = useState('');
+    // Инициализируем состояние из localStorage сразу
+    const [isArchiveMode, setIsArchiveMode] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('isArchiveMode');
+            return saved ? JSON.parse(saved) : false;
+        }
+        return false;
+    });
 
-    // Проверка авторизации с использованием React Query
+    // Проверка авторизации
     const { data: authData } = useQuery({
         queryKey: ['auth'],
         queryFn: () => checkAuth("teacher", router),
-        staleTime: 30 * 60 * 1000, // 30 минут кэширования
+        staleTime: 30 * 60 * 1000,
     });
 
-    // Загрузка ведомостей с кэшированием (теперь включая названия дисциплин)
-// Загрузка ведомостей с кэшированием (теперь включая названия дисциплин)
-const { data: statements = [] } = useQuery({
-    queryKey: ['teacherStatements'],
-    queryFn: fetchTeacherStatements,
-    enabled: !!authData?.isAuthenticated,
-    staleTime: 5 * 60 * 1000, // 5 минут кэширования
-});
+    // Загрузка ведомостей
+    const { data: statements = [], refetch } = useQuery({
+        queryKey: ['teacherStatements', isArchiveMode],
+        queryFn: () => fetchTeacherStatements(isArchiveMode),
+        enabled: !!authData?.isAuthenticated,
+        staleTime: 5 * 60 * 1000,
+    });
 
-// Логируем загруженные ведомости
-useEffect(() => {
-    if (statements.length) {
-        console.log("Загруженные ведомости:", statements);
-    }
-}, [statements]);
+    // Сохраняем состояние архива при изменении
+    useEffect(() => {
+        if (isMounted) {
+            localStorage.setItem('isArchiveMode', JSON.stringify(isArchiveMode));
+            refetch();
+        }
+    }, [isArchiveMode, refetch, isMounted]);
+
+    // Восстанавливаем группу после проверки авторизации
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setIsMounted(true);
+            const savedGroup = localStorage.getItem('selectedGroup');
+            if (savedGroup && authData?.isAuthenticated) {
+                setSelectedGroup(savedGroup);
+            }
+        }
+    }, [authData?.isAuthenticated]);
 
 
-    // Обработчик выбора группы с оптимизированными запросами
+    useEffect(() => {
+        if (statements.length) {
+            console.log("Загруженные ведомости:", statements);
+            console.log("Режим архива:", isArchiveMode);
+        }
+    }, [statements, isArchiveMode]);
+
     const handleGroupSelect = useCallback(async (groupId) => {
         if (!authData?.isAuthenticated) return;
         
@@ -60,22 +84,12 @@ useEffect(() => {
         }
     }, [authData?.isAuthenticated]);
 
-    // Фильтрация ведомостей по выбранной группе (теперь без дополнительных запросов)
     const filteredStatements = useMemo(() => {
         if (!selectedGroup || !statements.length) return [];
         return statements.filter(statement => statement.groupId === selectedGroup);
     }, [selectedGroup, statements]);
 
-    // Восстановление выбранной группы при загрузке
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            setIsMounted(true);
-            const savedGroup = localStorage.getItem("selectedGroup");
-            if (savedGroup && authData?.isAuthenticated) {
-                setSelectedGroup(savedGroup);
-            }
-        }
-    }, [authData?.isAuthenticated]);
+
 
     const handleCancelSelection = useCallback(() => {
         if (!authData?.isAuthenticated) return;
@@ -88,7 +102,7 @@ useEffect(() => {
     const logoutMutation = useMutation({
         mutationFn: () => handleLogout(router),
         onError: (error) => {
-            // Дополнительная обработка ошибок UI
+            console.error("Ошибка при выходе:", error);
         }
     });
     
@@ -101,27 +115,28 @@ useEffect(() => {
                     statements={statements}
                     selectedGroup={selectedGroup}
                     onGroupSelect={handleGroupSelect}
-                    setSearchOpen={setSearchOpen} 
+                    setSearchOpen={setSearchOpen}
+                    isArchiveMode={isArchiveMode} // Передаем состояние архива
+                    setIsArchiveMode={setIsArchiveMode} // Передаем функцию изменения состояния
                 />
             </Sidebar>
     
             <main className="flex-1 bg-opacity-50 relative flex items-center justify-center">
                 {!selectedGroup ? (
-  <div className="text-2xl font-semibold text-black bg-white p-6 rounded-lg shadow-md">
-  Пожалуйста, выберите группу...
-</div>
-
+                    <div className="text-2xl font-semibold text-black bg-white p-6 rounded-lg shadow-md">
+                        Пожалуйста, выберите группу...
+                    </div>
                 ) : (
                     <StudentForm
                         selectedGroup={selectedGroup}
                         filteredStatements={filteredStatements}
                         handleCancelSelection={handleCancelSelection}
-                        teacherLogin={authData.login} // Передаем логин преподавателя
+                        teacherLogin={authData.login}
+                        isArchiveMode={isArchiveMode} // Передаем состояние архива
                     />
                 )}
             </main>
     
-            {/* Пустой div, равный закрытому сайдбару */}
             <div className="w-16" />
     
             <UserProfile 

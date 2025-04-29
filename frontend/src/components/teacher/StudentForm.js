@@ -6,18 +6,19 @@ import AttestationForm from './AttestationForm';
 import { fetchStudents, fetchPossibleGrades, downloadStatement } from '../../utils/api';
 import ConfirmModal from '../ConfirmModal';
 import WarningModal from '../WarningModal';
-import SuccessModal from './SuccessModal';
+import SuccessModal from '../SuccessModal';
 import { useRef } from "react";
 import { useQueryClient } from '@tanstack/react-query';
-import EmailSendModal from './EmailSendModal';
+import EmailSendModal from '../EmailSendModal';
 
 const StudentForm = ({
     selectedGroup,
     filteredStatements,
     handleCancelSelection,
-    teacherLogin
+    teacherLogin,
+    isArchiveMode // Добавлен пропс isArchiveMode
 }) => {
-    // 1. State declarations
+    // State declarations
     const [mode, setMode] = useState(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem('studentFormMode') || 'learning';
@@ -25,13 +26,16 @@ const StudentForm = ({
         return 'learning';
     });
 
+
     const [selectedStatementId, setSelectedStatementId] = useState(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem('selectedStatementId') || "";
         }
         return "";
     });
-    
+
+    const [successModalText, setSuccessModalText] = useState("Ведомость успешно создана!");
+    const [fileFormat, setFileFormat] = useState('docx'); // 'docx' или 'pdf'
     const [filteredGrades, setFilteredGrades] = useState([]);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
@@ -44,11 +48,11 @@ const StudentForm = ({
     });
     const [isEmailSendModalOpen, setIsEmailSendModalOpen] = useState(false);
 
-    // 2. React Query hooks
+    // React Query hooks
     const { data: students = [], refetch: refetchStudents } = useQuery({
         queryKey: ['students', selectedGroup],
         queryFn: () => fetchStudents(selectedGroup),
-        enabled: !!selectedGroup && !!selectedStatementId, // Запрашиваем студентов только при выбранной ведомости
+        enabled: !!selectedGroup && !!selectedStatementId,
         select: (data) => data.sort((a, b) => a.lastName.localeCompare(b.lastName))
     });
 
@@ -57,8 +61,15 @@ const StudentForm = ({
         queryFn: fetchPossibleGrades,
         staleTime: Infinity
     });
-
-    // 3. Helper functions
+    useEffect(() => {
+        if (isArchiveMode && mode !== 'statement') {
+            setMode('statement');
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('studentFormMode', 'statement');
+            }
+        }
+    }, [isArchiveMode, mode]);
+    // Helper functions
     const isCurrentSemesterStatement = useCallback((statement) => {
         if (statement.list && statement.list.trim() !== '') {
             return false;
@@ -82,17 +93,31 @@ const StudentForm = ({
         return statementDateString === todayString;
     }, []);
 
-    const handleSendByEmail = () => {
+    const handleSendByEmail = (format) => {
         setIsSuccessModalOpen(false);
         setIsEmailSendModalOpen(true);
+        setFileFormat(format);
     };
+
     const handleEmailSend = async (emailData) => {
-        // Здесь должна быть логика отправки email
-        console.log('Отправка email:', emailData);
-        // Пример:
-        // await sendEmail(selectedStatementId, emailData.recipients, emailData.text);
-        setIsEmailSendModalOpen(false);
+        try {
+            // Добавляем параметр формата в данные для отправки
+            const response = await sendEmail(selectedStatementId, {
+                ...emailData,
+                convertToPdf: fileFormat === 'pdf'
+            });
+            setIsEmailSendModalOpen(false);
+            return response;
+        } catch (error) {
+            console.error('Ошибка отправки email:', error);
+            throw error;
+        }
     };
+
+    const handleDownload = (format) => {
+        downloadStatement(selectedStatementId, format === 'pdf');
+    };
+    
 
     const closeEmailSendModal = () => {
         setIsEmailSendModalOpen(false);
@@ -168,8 +193,11 @@ const StudentForm = ({
         setSelectedStatementId(statementId);
     };
 
+    // Измененные обработчики переключения режимов
     const handleSetLearningMode = () => {
-        setMode('learning');
+        if (!isArchiveMode) { // Блокируем переключение в архивном режиме
+            setMode('learning');
+        }
     };
     
     const handleSetStatementMode = () => {
@@ -331,16 +359,22 @@ const StudentForm = ({
                     <div className="w-px h-8 bg-gray-300 mx-1" />
 
                     {/* ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА */}
-                    <div className="flex bg-white rounded-lg overflow-hidden h-[50px] border border-gray-300 min-w-[200px] shadow-sm">
+ {/* ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА с учетом архивного режима */}
+ <div className="flex bg-white rounded-lg overflow-hidden h-[50px] border border-gray-300 min-w-[200px] shadow-sm">
                         <button
                             className={`flex-1 px-3 text-sm flex items-center justify-center transition-all ${
                                 mode === 'learning' 
-                                    ? 'bg-teal-600 text-white font-medium shadow-inner' 
-                                    : 'text-gray-700 hover:bg-gray-50 font-medium'
+                                    ? isArchiveMode 
+                                        ? 'bg-gray-400 text-white font-medium cursor-not-allowed' 
+                                        : 'bg-teal-600 text-white font-medium shadow-inner'
+                                    : isArchiveMode
+                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                        : 'text-gray-700 hover:bg-gray-50 font-medium'
                             }`}
                             onClick={handleSetLearningMode}
+                            disabled={isArchiveMode} // Добавляем атрибут disabled
                         >
-                            Текущее
+                            Занятия
                         </button>
                         <button
                             className={`flex-1 px-3 text-sm flex items-center justify-center transition-all ${
@@ -358,7 +392,7 @@ const StudentForm = ({
  
                 {!hasStatements ? (
                     <div className="flex-1 flex items-center justify-center">
-                        <div className="text-center  text-gray-500">
+                        <div className="text-center text-gray-500">
                             {mode === 'statement' 
                                 ? 'Нет доступных ведомостей для аттестации' 
                                 : 'Нет доступных ведомостей для текущих занятий'}
@@ -388,10 +422,10 @@ const StudentForm = ({
                             }));
                             setIsSuccessModalOpen(true);
                         }}
+                        isArchiveMode={isArchiveMode} // Передаем состояние архива в AttestationForm
                     />
                 )}
             </div>
-            
             {/* Модальные окна */}
             <ConfirmModal
                 isOpen={isConfirmModalOpen}
@@ -406,20 +440,21 @@ const StudentForm = ({
                 warningText={confirmationData.warningMessage}
             />
             
+
             <SuccessModal
-                isOpen={isSuccessModalOpen}
-                onClose={closeSuccessModal}
-                successText={confirmationData.successMessage}
-                onDownload={mode === 'statement' ? () => {
-                    downloadStatement(selectedStatementId);
-                } : null}
-                onSendByEmail={handleSendByEmail} // Добавлен обработчик
-            />
-            {/* Добавлено модальное окно для отправки email */}
+        isOpen={isSuccessModalOpen}
+        onClose={closeSuccessModal}
+        onSendByEmail={handleSendByEmail}
+        statementId={selectedStatementId}
+        successText={`Ведомость ${selectedStatementId}`}
+      />
+            
             <EmailSendModal
                 isOpen={isEmailSendModalOpen}
                 onClose={closeEmailSendModal}
                 statementId={selectedStatementId}
+                fileFormat={fileFormat}
+                onSend={handleEmailSend}
             />
         </>
     );

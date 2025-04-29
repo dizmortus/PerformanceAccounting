@@ -1,12 +1,19 @@
 'use client';
-import { useState } from 'react'; // Добавляем импорт useState
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FaSearch, FaUsers, FaChevronRight } from 'react-icons/fa';
 import { fetchGroups } from '../../utils/api';
 import GroupSearchModal from './GroupSearchModal';
 
-const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => {
+const SidebarTeacherContent = ({ 
+    statements, 
+    selectedGroup, 
+    onGroupSelect, 
+    isArchiveMode, 
+    setIsArchiveMode 
+}) => {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+
 
     // Оптимизированная загрузка групп с кэшированием
     const { data: groups = [], isLoading, isError } = useQuery({
@@ -19,8 +26,8 @@ const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => 
             );
         },
         enabled: statements.length > 0,
-        staleTime: 10 * 60 * 1000, // 10 минут кэширования
-        refetchOnWindowFocus: false // Не обновлять при возврате на вкладку
+        staleTime: 10 * 60 * 1000,
+        refetchOnWindowFocus: false
     });
 
     const handleGroupSelect = (groupId) => {
@@ -56,6 +63,30 @@ const SidebarTeacherContent = ({ statements, selectedGroup, onGroupSelect }) => 
 
             <div className="mt-12 px-2">
                 <h2 className="text-lg font-semibold text-black text-center mb-3">Группы</h2>
+                
+                {/* Переключатель с передачей состояния */}
+                <div className="flex bg-white rounded-lg overflow-hidden h-[40px] border border-gray-300 mb-4 shadow-sm">
+                    <button
+                        className={`flex-1 px-3 text-sm flex items-center justify-center transition-all ${
+                            !isArchiveMode
+                                ? 'bg-teal-600 text-white font-medium shadow-inner'
+                                : 'text-gray-700 hover:bg-gray-50 font-medium'
+                        }`}
+                        onClick={() => setIsArchiveMode(false)}
+                    >
+                        Текущие
+                    </button>
+                    <button
+                        className={`flex-1 px-3 text-sm flex items-center justify-center transition-all ${
+                            isArchiveMode
+                                ? 'bg-teal-600 text-white font-medium shadow-inner'
+                                : 'text-gray-700 hover:bg-gray-50 font-medium'
+                        }`}
+                        onClick={() => setIsArchiveMode(true)}
+                    >
+                        Архив
+                    </button>
+                </div>
             </div>
 
             <div className="flex-grow overflow-y-auto space-y-3 p-2">
