@@ -8,7 +8,7 @@ const SidebarAdminContent = ({ selectedCategory, handleCategorySelect }) => {
         { id: 'students', label: 'Студенты', icon: <FaUserGraduate /> },
         { id: 'disciplines', label: 'Дисциплины', icon: <FaBook /> },
         { id: 'statistics', label: 'Статистика', icon: <FaChartBar /> },
-        { id: 'performance', label: 'Успеваемость', icon: <FaChartLine /> }
+        // { id: 'performance', label: 'Успеваемость', icon: <FaChartLine /> }
     ];
 
     return (

@@ -14,8 +14,9 @@ import StatementTable from '../../components/admin/statement/StatementTable';
 import GroupTable from '../../components/admin/group/GroupTable';
 import StudentTable from '../../components/admin/student/StudentTable';
 import DisciplineTable from '../../components/admin/discipline/DisciplineTable';
-import StatisticsTable from '../../components/admin/statement/StatementStatisticsTable';
-//import PerformanceTable from '../../components/admin/performance/PerformanceTable';
+//import StatisticsTable from '../../components/admin/statement/StatementStatisticsTable';
+//import PerformanceTable from '../../components/admin/student/StudentStatisticsTable';
+import GroupStatisticsTable from '../../components/admin/group/GroupStatisticsTable';
 import { checkAuth } from '../../utils/auth';
 
 export default function AdminDashboard() {
@@ -116,7 +117,7 @@ export default function AdminDashboard() {
                             />
                         )}
                         {selectedCategory === 'statistics' && (
-                            <StatisticsTable 
+                            <GroupStatisticsTable 
                                 onCancel={handleCancel}
                             />
                         )}

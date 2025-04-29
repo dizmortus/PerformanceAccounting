@@ -11,6 +11,11 @@ const GradesTable = ({
   tableRef,
   handleCellClick
 }) => {
+  // Функция для проверки открытых модальных окон
+  const checkModalOpen = useCallback(() => {
+    return document.querySelector('.modal-open') !== null;
+  }, []);
+
   const scrollToCell = useCallback((studentIndex, dateIndex) => {
     if (!tableRef.current) return;
 
@@ -44,6 +49,9 @@ const GradesTable = ({
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Проверяем, открыто ли модальное окно
+      if (checkModalOpen()) return;
+      
       if (!students.length || !availableDates.length) return;
 
       const { studentIndex, dateIndex } = focusedCell;
@@ -91,7 +99,7 @@ const GradesTable = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusedCell, students.length, availableDates.length, handleCellClick, scrollToCell, statementId]);
+  }, [focusedCell, students.length, availableDates.length, handleCellClick, scrollToCell, statementId, checkModalOpen]);
 
   return (
     <div className="flex-1 overflow-auto" ref={tableRef}>

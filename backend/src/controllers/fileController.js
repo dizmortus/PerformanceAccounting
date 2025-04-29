@@ -5,7 +5,9 @@ import Docxtemplater from "docxtemplater";
 import { Statement, Discipline, Faculty, Group, Specialty, Student, Grade, User } from "../models/index.js";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
+import validator from 'validator';
 // Получаем текущую директорию файла
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -221,5 +223,157 @@ export const getStatementFile = async (req, res) => {
         console.error(`Ошибка при получении файла ведомости:`, error);
         res.status(500).setHeader('Content-Type', 'text/plain');
         res.send("Внутренняя ошибка сервера при получении файла");
+    }
+};
+
+
+
+
+// Функции для шифрования/дешифрования
+const algorithm = 'aes-256-cbc';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // Должен быть 32 байта
+const IV_LENGTH = 16;
+
+function decrypt(text) {
+    const textParts = text.split(':');
+    const iv = Buffer.from(textParts.shift(), 'hex');
+    const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+    const decipher = crypto.createDecipheriv(algorithm, Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
+    let decrypted = decipher.update(encryptedText);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    return decrypted.toString();
+  }
+/**
+ * Отправляет ведомость по почте через Gmail
+ * @param {Object} req - Запрос
+ * @param {Object} res - Ответ
+ */
+export const sendStatementByEmail = async (req, res) => {
+    const { statementId } = req.params;
+    const { 
+        recipientEmails, 
+        subject = 'Ведомость', 
+        messageText = 'Прикреплена ведомость по дисциплине.',
+        header = 'Уважаемые коллеги,' // Новое поле - заголовок письма
+    } = req.body;
+
+    try {
+        // Валидация
+        if (!Array.isArray(recipientEmails) || recipientEmails.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "Укажите хотя бы один email получателя" 
+            });
+        }
+
+        // Получаем ведомость и преподавателя
+        const statement = await Statement.findOne({
+            where: { id: statementId },
+            include: [{
+                model: User,
+                as: 'teacher',
+                attributes: ['email', 'emailPassword', 'firstName', 'lastName', 'patronymic'],
+                foreignKey: 'teacherLogin'
+            }]
+        });
+
+        if (!statement) {
+            return res.status(404).json({ success: false, error: "Ведомость не найдена" });
+        }
+
+        if (!statement.teacher.email || !statement.teacher.emailPassword) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "У преподавателя не настроена почта или пароль" 
+            });
+        }
+
+        if (!statement.list) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "Ведомость не содержит данных для отправки" 
+            });
+        }
+
+        // Читаем файл ведомости
+        const fileContent = await fs.promises.readFile(statement.list);
+
+        // Дешифруем пароль перед использованием
+        let decryptedPassword = decrypt(statement.teacher.emailPassword);
+
+        // Формируем имя отправителя в формате "Фамилия И.О."
+        const { lastName, firstName, patronymic } = statement.teacher;
+        const initials = `${firstName ? firstName.charAt(0) + '.' : ''}${patronymic ? patronymic.charAt(0) + '.' : ''}`;
+        const senderName = `${lastName} ${initials}`.trim();
+
+        // Настраиваем SMTP транспортер
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port: parseInt(process.env.SMTP_PORT) || 465,
+            secure: true,
+            auth: {
+                user: statement.teacher.email,
+                pass: decryptedPassword
+            },
+            tls: {
+                rejectUnauthorized: process.env.NODE_ENV !== 'development'
+            },
+            logger: true,
+            debug: true
+        });
+
+        // Формируем полный текст письма с заголовком
+        const fullMessageText = `${header}\n\n${messageText}`;
+// Получаем оригинальное имя файла из пути
+const originalFileName = path.basename(statement.list);
+
+        // Отправляем письмо
+        const info = await transporter.sendMail({
+            from: {
+                name: senderName,
+                address: statement.teacher.email
+            },
+            to: recipientEmails.join(', '),
+            subject: subject,
+            text: fullMessageText, // Используем текст с заголовком
+            attachments: [{
+                filename: originalFileName, // Используем оригинальное имя
+                content: fileContent,
+                contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            }]
+        });
+
+        // Обновляем дату отправки
+        await statement.update({ date: new Date() });
+
+        // Очищаем память от дешифрованного пароля
+        decryptedPassword = null;
+
+        res.json({
+            success: true,
+            message: "Ведомость успешно отправлена",
+            details: {
+                messageId: info.messageId,
+                accepted: info.accepted,
+                rejected: info.rejected,
+                header: header // Возвращаем использованный заголовок в ответе
+            }
+        });
+
+    } catch (error) {
+        console.error("Ошибка отправки:", error);
+        
+        let errorMessage = "Ошибка при отправке ведомости";
+        if (error.code === 'EAUTH') {
+            errorMessage = "Ошибка аутентификации. Проверьте email и пароль.";
+        } else if (error.code === 'ENOENT') {
+            errorMessage = "Файл ведомости не найден";
+        }
+
+        res.status(500).json({
+            success: false,
+            error: errorMessage,
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };

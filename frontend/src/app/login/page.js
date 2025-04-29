@@ -4,14 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { jwtDecode } from 'jwt-decode';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import PasswordResetModal  from '../../components/login/PasswordResetModal';
 
 export default function LoginPage() {
     const [login, setLogin] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const router = useRouter();
-
-    // Проверка авторизации при загрузке
+    const [showResetModal, setShowResetModal] = useState(false);
     const { isError: authCheckError } = useQuery({
         queryKey: ['authCheck'],
         queryFn: async () => {
@@ -19,47 +19,46 @@ export default function LoginPage() {
             const refreshToken = localStorage.getItem('refreshToken');
             
             if (!accessToken || !refreshToken) {
-                return { isAuthenticated: false }; // Явное возвращение значения
+                return { isAuthenticated: false };
             }
 
             try {
                 const decodedAccess = jwtDecode(accessToken);
                 const decodedRefresh = jwtDecode(refreshToken);
                 
-                // Проверяем срок действия refresh-токена
                 const now = Date.now() / 1000;
                 if (decodedRefresh.exp < now) {
                     localStorage.removeItem('accessToken');
                     localStorage.removeItem('refreshToken');
-                    return { isAuthenticated: false }; // Явное возвращение значения
+                    return { isAuthenticated: false };
                 }
 
-                // Проверяем статус из токена
                 if (decodedAccess.status === 'Заблокированный') {
                     localStorage.removeItem('accessToken');
                     localStorage.removeItem('refreshToken');
                     throw new Error('Ваш аккаунт заблокирован. Обратитесь к администратору.');
                 }
 
-                // Перенаправление по роли
+                // Добавлено перенаправление для гостя
                 if (decodedAccess.role === 'Администратор') {
                     router.push('/admin');
                 } else if (decodedAccess.role === 'Преподаватель') {
                     router.push('/teacher');
+                } else if (decodedAccess.role === 'Гость') {
+                    router.push('/guest');
                 }
 
-                return { isAuthenticated: true }; // Явное возвращение значения
+                return { isAuthenticated: true };
             } catch (error) {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
-                return { isAuthenticated: false }; // Явное возвращение значения
+                return { isAuthenticated: false };
             }
         },
         retry: false,
         staleTime: Infinity
     });
 
-    // Остальной код остается без изменений...
     const loginMutation = useMutation({
         mutationFn: async () => {
             const res = await fetch('/api/auth/login', {
@@ -87,10 +86,13 @@ export default function LoginPage() {
             localStorage.setItem('accessToken', data.accessToken);
             localStorage.setItem('refreshToken', data.refreshToken);
 
+            // Добавлено перенаправление для гостя
             if (decoded.role === 'Администратор') {
                 router.push('/admin');
             } else if (decoded.role === 'Преподаватель') {
                 router.push('/teacher');
+            } else if (decoded.role === 'Гость') {
+                router.push('/guest');
             }
         }
     });
@@ -113,25 +115,27 @@ export default function LoginPage() {
                 
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <div>
-                        <input
-                            type="text"
-                            placeholder="Логин"
-                            value={login}
-                            onChange={(e) => setLogin(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                            required
-                        />
+                    <input
+    type="text"
+    placeholder="Логин"
+    value={login}
+    onChange={(e) => setLogin(e.target.value)}
+    className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
+    required
+    autoComplete="username"
+/>
                     </div>
                     <div>
                         <div className="relative">
-                            <input
-                                type={showPassword ? "text" : "password"}
-                                placeholder="Пароль"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500 pr-10"
-                                required
-                            />
+                        <input
+    type={showPassword ? "text" : "password"}
+    placeholder="Пароль"
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+    className="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500 pr-10 shadow-sm"
+    required
+    autoComplete="current-password"
+/>
                             <button
                                 type="button"
                                 onClick={() => setShowPassword(!showPassword)}
@@ -142,18 +146,26 @@ export default function LoginPage() {
                         </div>
                     </div>
                     <button 
-                        type="submit" 
-                        className="w-full py-3 bg-gradient-to-r from-teal-500 to-blue-500 text-white font-semibold rounded-lg transition-colors duration-300 hover:from-teal-600 hover:to-blue-600 disabled:opacity-50"
-                        disabled={loginMutation.isPending}
-                    >
-                        {loginMutation.isPending ? 'Вход...' : 'Войти'}
-                    </button>
+    type="submit" 
+    className="w-full py-3 bg-gradient-to-r from-teal-500 to-blue-500 text-white font-semibold rounded-lg transition-colors duration-300 hover:from-teal-600 hover:to-blue-600 shadow-md hover:shadow-lg disabled:opacity-50"
+    disabled={loginMutation.isPending}
+>
+    {loginMutation.isPending ? 'Вход...' : 'Войти'}
+</button>
                 </form>
                 
                 <div className="mt-6 text-center text-gray-600 text-sm">
                     <p>Если у вас нет аккаунта, обратитесь к администратору системы для получения доступа.</p>
+                    <button 
+                        onClick={() => setShowResetModal(true)}
+                        className="mt-2 text-blue-500 hover:text-blue-700 underline"
+                    >
+                        Забыли пароль?
+                    </button>
                 </div>
             </div>
+
+            {showResetModal && <PasswordResetModal onClose={() => setShowResetModal(false)} />}
         </div>
     );
 }

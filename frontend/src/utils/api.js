@@ -1310,3 +1310,206 @@ export const getStatementStatistics = async (statementId) => {
         throw error;
     }
 };
+
+/**
+ * Обновляет email пользователя и его пароль
+ * @param {string} email - Новый email пользователя
+ * @param {string} emailPassword - Пароль от почты (будет зашифрован на сервере)
+ * @returns {Promise<Object>} - Обновленные данные пользователя
+ */
+export const updateEmail = async (email, emailPassword) => {
+    try {
+        const response = await fetchWithAuth('/api/users/email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email,
+                emailPassword
+            })
+        });
+
+        const contentType = response.headers.get('content-type');
+        
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Ожидался JSON, но получено: ${text.substring(0, 100)}`);
+        }
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Ошибка при обновлении email');
+        }
+
+        return data;
+
+    } catch (error) {
+        console.error('Ошибка при обновлении email:', error);
+        
+        // Добавляем более информативное сообщение для пользователя
+        if (error.message.includes('already exists')) {
+            throw new Error('Этот email уже используется другим пользователем');
+        } else if (error.message.includes('invalid email')) {
+            throw new Error('Введите корректный email адрес');
+        } else if (error.message.includes('auth failed')) {
+            throw new Error('Неверный пароль от почты');
+        }
+
+        throw error;
+    }
+};
+
+/**
+ * Отправляет ведомость по электронной почте
+ * @param {number} statementId - ID ведомости
+ * @param {string[]} recipientEmails - Массив email адресов получателей
+ * @param {string} [subject='Ведомость'] - Тема письма (по умолчанию 'Ведомость')
+ * @param {string} [messageText='Прикреплена ведомость по дисциплине.'] - Текст письма
+ * @returns {Promise<Object>} - Результат отправки
+ */
+export const sendStatementByEmail = async (statementId, recipientEmails, subject = 'Ведомость', messageText = 'Прикреплена ведомость по дисциплине.') => {
+    try {
+        const response = await fetchWithAuth(`/api/statements/${statementId}/send-email`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                recipientEmails,
+                subject,
+                messageText
+            })
+        });
+
+        const contentType = response.headers.get('content-type');
+        
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Ожидался JSON, но получено: ${text.substring(0, 100)}`);
+        }
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Ошибка при отправке ведомости по email');
+        }
+
+        return {
+            success: true,
+            message: data.message || 'Ведомость успешно отправлена',
+            details: data.details
+        };
+
+    } catch (error) {
+        console.error(`Ошибка при отправке ведомости ${statementId} по email:`, error);
+        
+        // Улучшенные сообщения об ошибках
+        if (error.message.includes('email not configured')) {
+            throw new Error('У преподавателя не настроена почта для отправки');
+        } else if (error.message.includes('no statement file')) {
+            throw new Error('Файл ведомости не найден');
+        } else if (error.message.includes('EAUTH')) {
+            throw new Error('Ошибка аутентификации почты. Проверьте настройки email.');
+        } else if (error.message.includes('no recipients')) {
+            throw new Error('Укажите хотя бы один email получателя');
+        }
+
+        throw new Error('Не удалось отправить ведомость. Пожалуйста, попробуйте позже.');
+    }
+};
+/**
+ * Получает статистику успеваемости студента
+ * @param {number} studentId - ID студента
+ * @param {number} [semester] - Номер семестра (1-10, опционально)
+ * @returns {Promise<Object>} - Статистика студента
+ */
+export const getStudentStatistics = async (studentId, semester) => {
+    try {
+        const url = semester 
+            ? `/api/students/${studentId}/statistics?semester=${semester}`
+            : `/api/students/${studentId}/statistics`;
+
+        const response = await fetchWithAuth(url);
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при получении статистики студента');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(`Ошибка при получении статистики студента ${studentId}:`, error);
+        throw error;
+    }
+};
+
+/**
+ * Получает статистику по группе с возможностью фильтрации по семестру и ведомости
+ * @param {number} groupId - ID группы
+ * @param {number|null} [semester=null] - Номер семестра (опционально)
+ * @param {number|null} [statementId=null] - ID ведомости (опционально)
+ * @returns {Promise<Object>} - Объект с статистикой студентов и средними значениями по группе
+ * @property {Array} students - Массив объектов с статистикой по каждому студенту
+ * @property {number|null} groupAverage - Средняя оценка по группе
+ * @property {number|null} groupAttendance - Средний процент посещаемости по группе
+ * @property {number|null} groupCertificationPercentage - Средний процент аттестации по группе
+ * @property {number|null} groupCertificationAverage - Средняя аттестационная оценка по группе
+ */
+export const getGroupStatistics = async (groupId, semester = null, statementId = null) => {
+    try {
+        // Формируем URL с параметрами
+        let url = `/api/groups/${groupId}/statistics`;
+        const params = new URLSearchParams();
+        
+        if (semester !== null) params.append('semester', semester);
+        if (statementId !== null) params.append('statementId', statementId);
+        
+        if (params.toString()) url += `?${params.toString()}`;
+
+        const response = await fetchWithAuth(url);
+
+        // Проверяем статус ответа
+        if (!response.ok) {
+            const errorData = await response.text();
+            throw new Error(`Server error: ${response.status} - ${errorData}`);
+        }
+
+        // Проверяем content-type
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Expected JSON but got: ${contentType}`);
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error('Error in getGroupStatistics:', error);
+        throw error;
+    }
+};
+
+/**
+ * Проверяет, есть ли у пользователя связанные зависимости (например, ведомости и т.д.)
+ * @param {string} login - Логин пользователя
+ * @returns {Promise<boolean>} - true, если есть зависимости; false, если нет
+ */
+export const hasUserDependencies = async (login) => {
+    try {
+        const response = await fetchWithAuth(`/api/users/${login}/has-dependencies`);
+
+        if (!response.ok) {
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
+
+        const { hasDependencies } = await response.json();
+        console.log(`Пользователь ${login} имеет зависимости:`, hasDependencies);
+        return hasDependencies;
+    } catch (error) {
+        console.error(`Ошибка при проверке зависимостей пользователя ${login}:`, error);
+        return true; // Безопасный вариант - предполагаем, что зависимости есть
+    }
+};

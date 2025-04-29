@@ -31,7 +31,10 @@ const PracticeForm = ({
     return focusedCellMap.get(selectedStatementId) || { studentIndex: 0, dateIndex: 0 };
   }, [focusedCellMap, selectedStatementId]);
   
-  
+    // Функция для проверки открытых модальных окон
+    const checkModalOpen = useCallback(() => {
+      return document.querySelector('.modal-open') !== null;
+    }, []);
 
   // Запросы данных с React Query
   const { data: lessons = [], isLoading: isLoadingLessons } = useQuery({
@@ -184,12 +187,12 @@ const PracticeForm = ({
 
   // Функция для сохранения оценок в localStorage
   const saveGradesToLocalStorage = (statementId, grades) => {
-    localStorage.setItem(`grades_${statementId}`, JSON.stringify(grades));
+    localStorage.setItem(`practice_grades_${statementId}`, JSON.stringify(grades));
   };
   
   // Функция для загрузки оценок из localStorage
   const loadGradesFromLocalStorage = (statementId) => {
-    const savedGrades = localStorage.getItem(`grades_${statementId}`);
+    const savedGrades = localStorage.getItem(`practice_grades_${statementId}`);
     return savedGrades ? JSON.parse(savedGrades) : null;
   };
 
@@ -215,7 +218,7 @@ const PracticeForm = ({
     setHasReset(true);
     
     // Очищаем сохраненные в localStorage оценки при отмене
-    localStorage.removeItem(`grades_${selectedStatementId}`);
+    localStorage.removeItem(`practice_grades_${selectedStatementId}`);
   }, [originalGrades, selectedStatementId]);
 
   const handleSavePractice = useCallback(() => {
@@ -265,7 +268,7 @@ const PracticeForm = ({
           setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
           
           // Очищаем сохраненные в localStorage оценки после успешного сохранения
-          localStorage.removeItem(`grades_${selectedStatementId}`);
+          localStorage.removeItem(`practice_grades_${selectedStatementId}`);
           
         } catch (error) {
           console.error("Ошибка сохранения:", error);
@@ -280,46 +283,55 @@ const PracticeForm = ({
       onOpenConfirm, onShowWarning, createLessonMutation, 
       submitGradesMutation, deleteGradesMutation]);
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      const key = e.key;
-
-      const isDigit = /^[0-9]$/.test(key);
-      const isAbsent = key === 'н';
-      const isClear = key === 'Backspace' || key === 'Delete';
-
-      // Текущая оценка
-      const { studentIndex, dateIndex } = focusedCell;
-      const studentId = students[studentIndex]?.id;
-      const date = availableDates[dateIndex];
-      const current = studentId && date ? grades[studentId]?.[date] : '';
-
-      if ((isDigit || isAbsent) && filteredGrades.includes(key)) {
-        handleSetGrade(key);
-      }
-
-      if (isClear) {
-        handleSetGrade('');
-      }
-
-      if ((key === '+' || key === '=' || key === 'Add') && filteredGrades.length > 0) {
+    // Обновлённый обработчик клавиш
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        // Проверяем, открыто ли модальное окно
+        if (checkModalOpen()) return;
+  
+        const key = e.key;
+  
+        const isDigit = /^[0-9]$/.test(key);
+        const isAbsent = key === 'н';
+        const isClear = key === 'Backspace' || key === 'Delete';
+  
+        // Текущая оценка
+        const { studentIndex, dateIndex } = focusedCell;
+        const studentId = students[studentIndex]?.id;
+        const date = availableDates[dateIndex];
+        const current = studentId && date ? grades[studentId]?.[date] : '';
+  
+        if ((isDigit || isAbsent) && filteredGrades.includes(key)) {
+          e.preventDefault();
+          handleSetGrade(key);
+        }
+  
+        if (isClear) {
+          e.preventDefault();
+          handleSetGrade('');
+        }
+  
+        if ((key === '+' || key === '=' || key === 'Add') && filteredGrades.length > 0) {
+          e.preventDefault();
           const currentIndex = filteredGrades.indexOf(current);
           const prevIndex = (currentIndex - 1 + filteredGrades.length) % filteredGrades.length;
           handleSetGrade(filteredGrades[prevIndex]);
-      }
-
-      if ((key === '-' || key === 'Subtract') && filteredGrades.length > 0) {
+        }
+  
+        if ((key === '-' || key === 'Subtract') && filteredGrades.length > 0) {
+          e.preventDefault();
           const currentIndex = filteredGrades.indexOf(current);
-        const nextIndex = (currentIndex + 1) % filteredGrades.length;
-        handleSetGrade(filteredGrades[nextIndex]);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [filteredGrades, handleSetGrade, focusedCell, grades, students, availableDates]);
+          const nextIndex = (currentIndex + 1) % filteredGrades.length;
+          handleSetGrade(filteredGrades[nextIndex]);
+        }
+      };
+  
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }, [filteredGrades, handleSetGrade, focusedCell, grades, students, availableDates, checkModalOpen]);
+  
 
   const handleCellClick = useCallback((studentIndex, dateIndex) => {
     setFocusedCellMap(prev => new Map(prev).set(selectedStatementId, { studentIndex, dateIndex }));

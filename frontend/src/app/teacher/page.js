@@ -26,12 +26,21 @@ export default function TeacherDashboard() {
     });
 
     // Загрузка ведомостей с кэшированием (теперь включая названия дисциплин)
-    const { data: statements = [] } = useQuery({
-        queryKey: ['teacherStatements'],
-        queryFn: fetchTeacherStatements,
-        enabled: !!authData?.isAuthenticated,
-        staleTime: 5 * 60 * 1000, // 5 минут кэширования
-    });
+// Загрузка ведомостей с кэшированием (теперь включая названия дисциплин)
+const { data: statements = [] } = useQuery({
+    queryKey: ['teacherStatements'],
+    queryFn: fetchTeacherStatements,
+    enabled: !!authData?.isAuthenticated,
+    staleTime: 5 * 60 * 1000, // 5 минут кэширования
+});
+
+// Логируем загруженные ведомости
+useEffect(() => {
+    if (statements.length) {
+        console.log("Загруженные ведомости:", statements);
+    }
+}, [statements]);
+
 
     // Обработчик выбора группы с оптимизированными запросами
     const handleGroupSelect = useCallback(async (groupId) => {

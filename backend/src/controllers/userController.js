@@ -1,7 +1,7 @@
 import { User } from "../models/index.js";
 import bcrypt from 'bcryptjs';
 import sequelize from '../config/db.js'; 
-import { Faculty } from "../models/index.js"; // путь скорректируйте под ваш проект
+import { Faculty, Statement, Lesson } from "../models/index.js"; // путь скорректируйте под ваш проект
 
 export const getAllUsers = async (req, res) => {
     try {
@@ -117,90 +117,90 @@ export const deleteUser = async (req, res) => {
         console.error("Ошибка при удалении пользователя:", error);
         res.status(500).json({ error: "Ошибка сервера", details: error.message });
     }
-};// Обновленный обработчик для PUT /api/users/:oldLogin
+};
 export const updateUser = async (req, res) => {
-    const { oldLogin } = req.body;
-    const { login: newLogin, email, lastName, firstName, patronymic, role, status, facultyId } = req.body;
+    const { login: oldLogin } = req.params;
+    const newData = req.body;
 
     try {
-        // 1. Проверяем наличие пользователя
-        const user = await User.findOne({ where: { 'Логин': oldLogin } });
-        if (!user) {
-            return res.status(404).json({ success: false, error: "Пользователь не найден" });
-        }
-
-        // 2. Проверяем, не занят ли новый логин
-        if (newLogin && newLogin !== oldLogin) {
-            const existingUser = await User.findOne({ where: { 'Логин': newLogin } });
-            if (existingUser) {
-                return res.status(400).json({ success: false, error: "Пользователь с таким логином уже существует" });
-            }
-        }
-
-        // 3. Проверка факультета
-        if (facultyId) {
-            const faculty = await Faculty.findByPk(facultyId);
-            if (!faculty) {
-                return res.status(404).json({ success: false, error: "Факультет не найден" });
-            }
-        }
-
-        // 4. Обновление данных
-        if (newLogin === oldLogin) {
-            // Логин не меняется — обычное обновление
-            await user.update({
-                'Почта': email,
-                'Фамилия': lastName,
-                'Имя': firstName,
-                'Отчество': patronymic || null,
-                'Роль': role,
-                'Статус': status,
-                'ID Факультета': facultyId
+        // Начинаем транзакцию
+        const result = await sequelize.transaction(async (t) => {
+            // 1. Находим пользователя по старому логину
+            const user = await User.findOne({
+                where: { login: oldLogin },
+                transaction: t
             });
-        } else {
-            // Логин меняется — обновляем через raw query
-            await User.sequelize.query(
-                'UPDATE "Пользователи" SET "Логин" = ?, "Почта" = ?, "Фамилия" = ?, "Имя" = ?, "Отчество" = ?, "Роль" = ?, "Статус" = ?, "ID Факультета" = ? WHERE "Логин" = ?',
+            
+            if (!user) {
+                throw new Error('Пользователь не найден');
+            }
+
+            // 2. Удаляем служебные поля из данных для обновления
+            const updateData = { ...newData };
+            delete updateData.oldLogin;
+
+            // 3. Проверяем уникальность нового логина, если он изменяется
+            if (updateData.login && updateData.login !== oldLogin) {
+                const existingUser = await User.findOne({
+                    where: { login: updateData.login },
+                    transaction: t
+                });
+                
+                if (existingUser) {
+                    throw new Error('Пользователь с таким логином уже существует');
+                }
+            }
+
+            // 4. Проверяем уникальность email, если он изменяется
+            if (updateData.email && updateData.email !== user.email) {
+                const existingEmail = await User.findOne({
+                    where: { email: updateData.email },
+                    transaction: t
+                });
+                
+                if (existingEmail) {
+                    throw new Error('Пользователь с таким email уже существует');
+                }
+            }
+
+            // 5. Если логин не меняется, просто обновляем данные
+            if (!updateData.login || updateData.login === oldLogin) {
+                await user.update(updateData, { transaction: t });
+                return { success: true };
+            }
+
+            // 6. Если логин меняется - сначала обновляем остальные поля
+            const fieldsToUpdate = { ...updateData };
+            delete fieldsToUpdate.login;
+
+            if (Object.keys(fieldsToUpdate).length > 0) {
+                await user.update(fieldsToUpdate, { transaction: t });
+            }
+
+            // 7. Затем обновляем логин с помощью прямого SQL-запроса
+            await sequelize.query(
+                'UPDATE "Пользователи" SET "Логин" = :newLogin WHERE "Логин" = :oldLogin', 
                 {
-                    replacements: [newLogin, email, lastName, firstName, patronymic || null, role, status, facultyId, oldLogin],
-                    type: User.sequelize.QueryTypes.UPDATE
+                    replacements: { 
+                        newLogin: updateData.login, 
+                        oldLogin: oldLogin 
+                    },
+                    transaction: t
                 }
             );
-        }
 
-        // 5. Возвращаем обновлённые данные
-        const updatedUser = await User.findOne({
-            where: { 'Логин': newLogin || oldLogin },
-            attributes: [
-                ['Логин', 'login'],
-                ['Почта', 'email'],
-                ['Фамилия', 'lastName'],
-                ['Имя', 'firstName'],
-                ['Отчество', 'patronymic'],
-                ['Роль', 'role'],
-                ['Статус', 'status'],
-                ['ID Факультета', 'facultyId']
-            ],
-            raw: true
+            return { success: true };
         });
 
-        res.json({
-            success: true,
-            message: "Данные пользователя успешно обновлены",
-            user: updatedUser
-        });
-
+        res.json({ success: true });
     } catch (error) {
-        console.error("Ошибка при обновлении пользователя:", error);
-        res.status(500).json({
-            success: false,
-            error: "Ошибка сервера при обновлении пользователя",
-            details: error.message
+        console.error('Ошибка при обновлении пользователя:', error);
+        res.status(400).json({ 
+            success: false, 
+            error: error.message || 'Ошибка при обновлении пользователя' 
         });
     }
 };
-
-
 export const createUser = async (req, res) => {
     const { login, email, password, lastName, firstName, patronymic, role, status } = req.body;
 
@@ -268,7 +268,7 @@ export const getAllTeachers = async (req, res) => {
 };
 
 
-export const changePassword = async (req, res) => {
+export const changeUserPassword = async (req, res) => {
     const { login } = req.user;
     const { currentPassword, newPassword } = req.body;
 
@@ -291,5 +291,151 @@ export const changePassword = async (req, res) => {
     } catch (error) {
         console.error("Ошибка при смене пароля:", error);
         res.status(500).json({ error: "Ошибка сервера", details: error.message });
+    }
+};
+
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import validator from 'validator';
+
+// Функции для шифрования/дешифрования
+const algorithm = 'aes-256-cbc';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+const IV_LENGTH = 16;
+
+function encrypt(text) {
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv(algorithm, Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
+    let encrypted = cipher.update(text);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+    return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+/**
+ * Проверяет валидность email и пароля через SMTP
+ */
+async function verifySMTPCredentials(email, password) {
+    try {
+        const testTransporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port: parseInt(process.env.SMTP_PORT) || 465,
+            secure: true,
+            auth: {
+                user: email,
+                pass: password
+            },
+            logger: false,
+            debug: false,
+            tls: {
+                rejectUnauthorized: process.env.NODE_ENV === 'production'
+            }
+        });
+
+        await testTransporter.verify();
+        return true;
+    } catch (error) {
+        console.error('SMTP verification failed:', error);
+        return false;
+    }
+}
+
+/**
+ * Устанавливает или обновляет почту и пароль почты для пользователя
+ */
+/**
+ * Устанавливает или обновляет почту и пароль почты для пользователя
+ */
+export const setUserEmailAndPassword = async (req, res) => {
+    const { email, emailPassword } = req.body;
+    const { login } = req.user;
+    if (!login) {
+        return res.status(401).json({ success: false, error: "Не удалось определить пользователя" });
+    }
+
+    try {
+        // 1. Проверяем наличие пользователя
+        const user = await User.findOne({ where: { login } });
+        if (!user) {
+            return res.status(404).json({ success: false, error: "Пользователь не найден" });
+        }
+
+        // 2. Проверяем email на валидность
+        if (email && !validator.isEmail(email)) {
+            return res.status(400).json({ success: false, error: "Некорректный формат email" });
+        }
+
+        // 3. Проверяем SMTP
+        if (email && emailPassword) {
+            const credentialsValid = await verifySMTPCredentials(email, emailPassword);
+            if (!credentialsValid) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: "Неверные учетные данные SMTP. Проверьте email и пароль." 
+                });
+            }
+        }
+
+        // 4. Шифруем пароль
+        const encryptedPassword = emailPassword ? encrypt(emailPassword) : null;
+
+        // 5. Обновляем данные
+        await user.update({
+            email: email || null,
+            emailPassword: encryptedPassword
+        });
+
+        // 6. Возвращаем обновлённые данные
+        const updatedUser = await User.findOne({
+            where: { login },
+            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId']
+        });
+
+        res.json({
+            success: true,
+            message: "Данные почты успешно обновлены",
+            user: updatedUser
+        });
+
+    } catch (error) {
+        console.error("Ошибка при обновлении почты:", error);
+        res.status(500).json({
+            success: false,
+            error: "Ошибка сервера при обновлении почты",
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+export const hasUserDependencies = async (req, res) => {
+    const { login } = req.params;
+
+    try {
+        const statementsAsTeacherCount = await Statement.count({
+            where: { teacherLogin: login }
+        });
+        
+        const statementsAsClassTeacherCount = await Statement.count({
+            where: { classTeacherLogin: login }
+        });
+        
+        // Remove the lessonsCount check or replace with proper association
+        const hasDependencies = statementsAsTeacherCount > 0 || 
+                              statementsAsClassTeacherCount > 0;
+
+        res.json({
+            hasDependencies,
+            details: {
+                hasStatementsAsTeacher: statementsAsTeacherCount > 0,
+                hasStatementsAsClassTeacher: statementsAsClassTeacherCount > 0,
+                hasLessons: false, // or implement proper check
+                totalDependencies: statementsAsTeacherCount + statementsAsClassTeacherCount
+            }
+        });
+    } catch (error) {
+        console.error("Ошибка при проверке зависимостей пользователя:", error);
+        res.status(500).json({
+            error: "Ошибка сервера при проверке зависимостей пользователя",
+            details: error.message
+        });
     }
 };

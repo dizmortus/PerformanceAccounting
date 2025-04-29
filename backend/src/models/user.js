@@ -1,4 +1,3 @@
-// src/models/user.js
 export default (sequelize, DataTypes) => {
   const User = sequelize.define('User', {
     login: {
@@ -8,12 +7,17 @@ export default (sequelize, DataTypes) => {
     },
     email: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
       unique: true,
       field: 'Почта',
       validate: {
         isEmail: true,
       }
+    },
+    emailPassword: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: 'Пароль почты'
     },
     passwordHash: {
       type: DataTypes.TEXT,
@@ -35,21 +39,21 @@ export default (sequelize, DataTypes) => {
       field: 'Отчество'
     },
     role: {
-      type: DataTypes.ENUM('Преподаватель', 'Администратор'),
+      type: DataTypes.ENUM('Преподаватель', 'Администратор', 'Гость'),
       allowNull: false,
       field: 'Роль',
-      defaultValue: 'Преподаватель',
+      defaultValue: 'Гость',
       validate: {
-        isIn: [['Преподаватель', 'Администратор']],
+        isIn: [['Преподаватель', 'Администратор', 'Гость']],
       }
     },
     status: {
-      type: DataTypes.ENUM('Активный', 'Заблокированный'),
+      type: DataTypes.ENUM('Активный', 'Заблокированный', 'Смена пароля'),
       allowNull: false,
       field: 'Статус',
       defaultValue: 'Активный',
       validate: {
-        isIn: [['Активный', 'Заблокированный']],
+        isIn: [['Активный', 'Заблокированный', 'Смена пароля']],
       }
     },
     facultyId: {
@@ -58,7 +62,7 @@ export default (sequelize, DataTypes) => {
       field: 'ID Факультета',
       references: {
         model: {
-          tableName: 'Факультеты' // Явное указание имени таблицы
+          tableName: 'Факультеты'
         },
         key: 'ID'
       }
@@ -67,6 +71,16 @@ export default (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true,
       field: 'Рефреш токен'
+    },
+    emailVerificationCode: {
+      type: DataTypes.STRING(6),
+      allowNull: true,
+      field: 'Код подтверждения почты'
+    },
+    codeExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'Срок действия кода'
     }
   }, {
     tableName: 'Пользователи',

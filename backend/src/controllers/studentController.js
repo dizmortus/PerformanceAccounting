@@ -307,3 +307,138 @@ export const getAllStudents = async (req, res) => {
       });
   }
 };
+
+
+/**
+ * Получает статистику успеваемости студента за семестр
+ * @param {number} studentId - ID студента
+ * @param {number} semester - Номер семестра (1-10)
+ * @returns {Promise<Object>} - Статистика студента за семестр
+ */
+export const getStudentStatistics = async (studentId, semester) => {
+  const id = Number(studentId);
+  const sem = Number(semester);
+
+  if (isNaN(id) || isNaN(sem) || sem < 1 || sem > 10) {
+      throw new Error('Неверный ID студента или номер семестра. Семестр должен быть числом от 1 до 10.');
+  }
+
+  try {
+      // 1. Получаем данные студента
+      const student = await Student.findByPk(id);
+      if (!student) {
+          throw new Error(`Студент с ID ${id} не найден`);
+      }
+
+      if (!student.groupId) {
+          throw new Error(`У студента ${id} не указана группа`);
+      }
+
+      // 2. Получаем ведомости группы за указанный семестр
+      const statements = await Statement.findAll({
+          where: {
+              groupId: student.groupId,
+              semester: sem
+          },
+          include: [
+              {
+                  model: Lesson,
+                  as: 'lessons',
+                  include: [{
+                      model: Grade,
+                      as: 'grades',
+                      where: { studentId: id },
+                      required: false
+                  }]
+              },
+              {
+                  model: Grade,
+                  as: 'certificationGrades',
+                  where: { studentId: id },
+                  required: false
+              }
+          ]
+      });
+
+      if (!statements.length) {
+          return {
+              overallAverage: null,
+              attendancePercentage: null,
+              certificationPercentage: null,
+              certificationAverage: null,
+              message: `Нет данных за ${sem} семестр`
+          };
+      }
+
+      // 3. Рассчитываем статистику
+      let totalGradesSum = 0;
+      let totalGradesCount = 0;
+      let totalPossibleAttendances = 0;
+      let actualAttendances = 0;
+      const certificationValues = [];
+      let totalCertificationPossible = 0;
+      let passedCertification = 0;
+
+      // Обработка занятий и оценок
+      for (const statement of statements) {
+          for (const lesson of statement.lessons || []) {
+              const grade = (lesson.grades || [])[0]; // Берем первую оценку (если есть)
+
+              totalPossibleAttendances++;
+
+              if (grade) {
+                  if (/^[0-9]+$/.test(grade.value)) {
+                      const numericValue = parseInt(grade.value);
+                      totalGradesSum += numericValue;
+                      totalGradesCount++;
+                      actualAttendances++;
+                  } else if (grade.value === 'не явился') {
+                      // Пропуск занятия
+                  }
+              }
+          }
+
+          // Обработка аттестационных оценок
+          for (const grade of statement.certificationGrades || []) {
+              if (grade.value === 'зачет') {
+                  certificationValues.push(1);
+                  passedCertification++;
+                  totalCertificationPossible++;
+              } else if (grade.value === 'незачет') {
+                  certificationValues.push(0);
+                  totalCertificationPossible++;
+              } else if (/^[0-9]+$/.test(grade.value)) {
+                  const numericValue = parseInt(grade.value);
+                  certificationValues.push(numericValue);
+                  totalCertificationPossible++;
+                  if (numericValue >= 4) {
+                      passedCertification++;
+                  }
+              }
+          }
+      }
+
+      // Расчет итоговых показателей
+      const round = num => num !== null ? Math.round(num * 10) / 10 : null;
+
+      const result = {
+          overallAverage: round(totalGradesCount > 0 ? totalGradesSum / totalGradesCount : null),
+          attendancePercentage: round(totalPossibleAttendances > 0 ? 
+              (actualAttendances / totalPossibleAttendances) * 100 : 0),
+          certificationPercentage: round(totalCertificationPossible > 0 ? 
+              (passedCertification / totalCertificationPossible) * 100 : 0),
+          certificationAverage: round(certificationValues.length > 0 ? 
+              certificationValues.reduce((sum, val) => sum + val, 0) / certificationValues.length : null),
+          semester: sem,
+          studentId: id,
+          groupId: student.groupId
+      };
+
+      console.log(`Статистика студента ${id} за семестр ${sem}:`, result);
+      return result;
+
+  } catch (error) {
+      console.error(`Ошибка при получении статистики студента ${id} за семестр ${sem}:`, error);
+      throw error;
+  }
+};

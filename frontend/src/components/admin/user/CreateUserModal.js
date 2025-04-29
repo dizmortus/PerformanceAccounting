@@ -8,6 +8,8 @@ import SearchableSelect from '../SearchableSelect';
 
 const CreateUserModal = ({ onClose }) => {
     const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [passwordMatchError, setPasswordMatchError] = useState("");
     const [localUser, setLocalUser] = useState({
         login: "",
         lastName: "",
@@ -69,29 +71,7 @@ const CreateUserModal = ({ onClose }) => {
         }
     });
 
-    const handleChange = (e, field) => {
-        const value = e.target.value;
-        setLocalUser((prev) => ({
-            ...prev,
-            [field]: value,
-        }));
-
-        if (validationErrors[field]) {
-            setValidationErrors((prev) => ({
-                ...prev,
-                [field]: "",
-            }));
-        }
-
-        if (field === "email") {
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(value)) {
-                setEmailError("Введите корректный email");
-            } else {
-                setEmailError("");
-            }
-        }
-    };
+    
 
     const handleRoleChange = (selectedRole) => {
         setLocalUser((prev) => ({
@@ -107,8 +87,47 @@ const CreateUserModal = ({ onClose }) => {
         }));
     };
 
+    const handleChange = (e, field) => {
+        const value = e.target.value;
+        const updatedUser = {
+            ...localUser,
+            [field]: value,
+        };
+        setLocalUser(updatedUser);
+    
+        if (validationErrors[field]) {
+            setValidationErrors((prev) => ({
+                ...prev,
+                [field]: "",
+            }));
+        }
+    
+        if (field === "email") {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(value)) {
+                setEmailError("Введите корректный email");
+            } else {
+                setEmailError("");
+            }
+        }
+    
+        // Проверка совпадения паролей после обновления localUser
+        if ((field === "newPassword" || field === "confirmPassword")) {
+            if (updatedUser.newPassword && updatedUser.confirmPassword) {
+                if (updatedUser.newPassword !== updatedUser.confirmPassword) {
+                    setPasswordMatchError("Пароли не совпадают");
+                } else {
+                    setPasswordMatchError("");
+                }
+            } else {
+                setPasswordMatchError("");
+            }
+        }
+    };
+    
+
     const handleCreate = async () => {
-        const requiredFields = ["login", "lastName", "firstName", "email", "newPassword"];
+        const requiredFields = ["login", "lastName", "firstName", "email", "newPassword", "confirmPassword"];
         const errors = {};
 
         requiredFields.forEach((field) => {
@@ -116,6 +135,11 @@ const CreateUserModal = ({ onClose }) => {
                 errors[field] = "Это поле обязательно для заполнения";
             }
         });
+
+        if (localUser.newPassword !== localUser.confirmPassword) {
+            errors.confirmPassword = "Пароли не совпадают";
+            setPasswordMatchError("Пароли не совпадают");
+        }
 
         if (Object.keys(errors).length > 0) {
             setValidationErrors(errors);
@@ -128,7 +152,6 @@ const CreateUserModal = ({ onClose }) => {
             return;
         }
 
-        // Start the user creation process by first checking login existence
         checkUserMutation.mutate(localUser.login);
     };
 
@@ -252,6 +275,32 @@ const CreateUserModal = ({ onClose }) => {
                             )}
                         </div>
 
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Подтверждение пароля</label>
+                            <div className="relative">
+                                <input
+                                    type={showConfirmPassword ? "text" : "password"}
+                                    placeholder="Повторите пароль"
+                                    onChange={(e) => handleChange(e, "confirmPassword")}
+                                    className={`w-full px-2 py-1 border rounded-lg pr-10 ${
+                                        validationErrors.confirmPassword ? "border-red-500" : ""
+                                    }`}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    className="absolute inset-y-0 right-2 flex items-center text-gray-600"
+                                >
+                                    {showConfirmPassword ? "👁" : "👁‍🗨"}
+                                </button>
+                            </div>
+                            {(validationErrors.confirmPassword || passwordMatchError) && (
+                                <p className="text-red-500 text-sm mt-1">
+                                    {validationErrors.confirmPassword || passwordMatchError}
+                                </p>
+                            )}
+                        </div>
+
                         <div className="flex items-center justify-between mt-4 bg-gray-100 p-2 rounded-lg">
                             <span className="text-gray-700 font-medium">
                                 {localUser.isBlocked ? "Заблокирован" : "Активен"}
@@ -279,9 +328,9 @@ const CreateUserModal = ({ onClose }) => {
                         <button
   className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
   onClick={handleCreate}
-  disabled={createGroupMutation.isPending}
+  disabled={createUserMutation.isPending}
 >
-  {createGroupMutation.isPending ? (
+  {createUserMutation.isPending ? (
     <>
 
       <span>Создание...</span>

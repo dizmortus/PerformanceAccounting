@@ -1,5 +1,13 @@
 import express from "express";
-import { login, register, logout, refreshToken } from "../controllers/authController.js";
+import { 
+    login, 
+    register, 
+    logout, 
+    refreshToken,
+    initiatePasswordReset,
+    verifyResetCode,
+    changePassword
+} from "../controllers/authController.js";
 
 import {
     getAllStatements,
@@ -10,7 +18,7 @@ import {
     deleteStatement,
     calculateAverageGrades,
     countMissedLessons,
-    getStatementByGroupDisciplineSemester
+    getStatementByGroupDisciplineSemester 
 } from "../controllers/statementController.js";
 
 import { verifyToken } from "../middleware/authMiddleware.js";
@@ -25,7 +33,9 @@ import {
     updateUser, 
     createUser, 
     getAllTeachers, 
-    changePassword 
+    changeUserPassword,
+    setUserEmailAndPassword,
+    hasUserDependencies
 } from "../controllers/userController.js";
 
 import { 
@@ -34,7 +44,7 @@ import {
     createGroup,
     updateGroup,
     deleteGroup,
-    hasGroupDependencies 
+    hasGroupDependencies, calculateGroupStatistics 
 } from '../controllers/groupController.js';
 
 import { 
@@ -62,7 +72,8 @@ import {
     createStudent,
     updateStudent,
     deleteStudent,
-    hasStudentDependencies
+    hasStudentDependencies,
+    getStudentStatistics
 } from "../controllers/studentController.js";
 
 import { 
@@ -74,7 +85,7 @@ import {
 
 import { 
     generateStatementDocument,
-    getStatementFile 
+    getStatementFile, sendStatementByEmail 
 } from "../controllers/fileController.js";
 
 import {
@@ -92,10 +103,13 @@ dotenv.config();
 const router = express.Router();
 
 // Аутентификация
+router.post("/auth/change-password", changePassword);
 router.post("/auth/login", login);
 router.post("/auth/register", register);
 router.post("/auth/logout", logout);
 router.post("/auth/refresh", refreshToken);
+router.post("/auth/initiate-password-reset", initiatePasswordReset);
+router.post("/auth/verify-reset-code", verifyResetCode);
 
 // Students routes
 router.get("/students", verifyToken, getAllStudents);
@@ -105,13 +119,13 @@ router.post("/students", verifyToken, createStudent);
 router.put("/students/:id", verifyToken, updateStudent);
 router.delete("/students/:id", verifyToken, deleteStudent);
 router.get("/students/:studentId/has-dependencies", verifyToken, hasStudentDependencies);
-
+router.get("/students/:studentId/statistics", verifyToken, getStudentStatistics);
 // Ведомости
 router.get("/statements/all", verifyToken, getAllStatements);
 router.get("/statements", verifyToken, getTeacherStatements);
 router.get('/statements/group/:groupId/discipline/:disciplineId/semester/:semester', 
     getStatementByGroupDisciplineSemester);
-
+router.post("/statements/:statementId/send-email", verifyToken, sendStatementByEmail);
 // Проверка наличия ведомостей у преподавателя
 router.get("/statements/has-statements/:teacherLogin", verifyToken, async (req, res) => {
     try {
@@ -189,7 +203,9 @@ router.delete("/users/:login", verifyToken, deleteUser);
 router.put("/users/:login", verifyToken, updateUser);
 router.post("/users", verifyToken, createUser);
 router.get("/users/all/teachers", verifyToken, getAllTeachers);
-router.post('/users/change-password', verifyToken, changePassword);
+router.post('/users/change-password', verifyToken, changeUserPassword);
+router.post('/users/email', verifyToken, setUserEmailAndPassword);
+router.get("/users/:login/has-dependencies", verifyToken, hasUserDependencies);
 
 // Получение возможных статусов и ролей
 router.get("/users/statuses/possible-values", getPossibleStatuses);
@@ -211,7 +227,21 @@ router.post('/groups', verifyToken, createGroup);
 router.put('/groups/:id', verifyToken, updateGroup);
 router.delete('/groups/:id', verifyToken, deleteGroup);
 router.get("/groups/:groupId/has-dependencies", verifyToken, hasGroupDependencies);
-
+router.get("/groups/:groupId/statistics", verifyToken, async (req, res, next) => { 
+    try {
+        const groupId = Number(req.params.groupId);
+        const semester = req.query.semester ? Number(req.query.semester) : null;
+        const statementId = req.query.statementId ? Number(req.query.statementId) : null;
+        
+        if (isNaN(groupId)) return res.status(400).json({ error: "Invalid groupId" });
+        
+        calculateGroupStatistics(groupId, semester, statementId)
+            .then(data => res.json(data))
+            .catch(next);
+    } catch (err) {
+        next(err);
+    }
+});
 // Специальности
 router.get("/specialties", verifyToken, getAllSpecialties);
 router.get("/specialties/:id", verifyToken, getSpecialtyById);

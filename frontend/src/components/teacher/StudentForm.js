@@ -9,6 +9,7 @@ import WarningModal from '../WarningModal';
 import SuccessModal from './SuccessModal';
 import { useRef } from "react";
 import { useQueryClient } from '@tanstack/react-query';
+import EmailSendModal from './EmailSendModal';
 
 const StudentForm = ({
     selectedGroup,
@@ -41,6 +42,7 @@ const StudentForm = ({
         successMessage: "",
         shouldDownload: false
     });
+    const [isEmailSendModalOpen, setIsEmailSendModalOpen] = useState(false);
 
     // 2. React Query hooks
     const { data: students = [], refetch: refetchStudents } = useQuery({
@@ -80,26 +82,35 @@ const StudentForm = ({
         return statementDateString === todayString;
     }, []);
 
+    const handleSendByEmail = () => {
+        setIsSuccessModalOpen(false);
+        setIsEmailSendModalOpen(true);
+    };
+    const handleEmailSend = async (emailData) => {
+        // Здесь должна быть логика отправки email
+        console.log('Отправка email:', emailData);
+        // Пример:
+        // await sendEmail(selectedStatementId, emailData.recipients, emailData.text);
+        setIsEmailSendModalOpen(false);
+    };
+
+    const closeEmailSendModal = () => {
+        setIsEmailSendModalOpen(false);
+    };
+
+    // 3. Helper functions
     const getAvailableStatements = useCallback(() => {
-        // Фильтруем ведомости по роли преподавателя
-        const roleFilteredStatements = filteredStatements.filter(statement => {
+        // Фильтруем ведомости по текущему режиму
+        return filteredStatements.filter(statement => {
+            // Проверяем, относится ли ведомость к текущему режиму
             if (mode === 'learning') {
-                return statement.classTeacherLogin === teacherLogin;
+                return statement.statementTypes?.includes('learning');
             } else {
-                return statement.teacherLogin === teacherLogin;
+                return statement.statementTypes?.includes('main');
             }
         });
-
-        if (mode === 'learning') {
-            return roleFilteredStatements.filter(statement => 
-                isCurrentSemesterStatement(statement))
-        } else {
-            return roleFilteredStatements.filter(statement => 
-                isTodayStatement(statement) && 
-                ['зачет', 'экзамен', 'дифференцированный зачет'].includes(statement.assessmentType))
-        }
-    }, [mode, filteredStatements, isCurrentSemesterStatement, isTodayStatement, teacherLogin]);
-
+    }, [mode, filteredStatements]);
+    
     // 4. Effects for local storage and derived state
     useEffect(() => {
         if (typeof window !== 'undefined' && selectedStatementId) {
@@ -130,12 +141,14 @@ const StudentForm = ({
     }, [mode]);
 
     useEffect(() => {
+        console.log('filteredStatements:', filteredStatements);
+    
         if (selectedStatementId && filteredStatements.length) {
             const selectedStatement = filteredStatements.find(statement => statement.id === selectedStatementId);
             const assessmentType = mode === 'learning' 
                 ? 'занятие'
                 : selectedStatement?.assessmentType;
-
+    
             const grades = assessmentType 
                 ? possibleGrades[assessmentType] || [] 
                 : [];
@@ -144,6 +157,8 @@ const StudentForm = ({
             setFilteredGrades([]);
         }
     }, [selectedStatementId, filteredStatements, possibleGrades, mode]);
+    
+    
 
     const availableStatements = getAvailableStatements();
     const hasStatements = availableStatements.length > 0;
@@ -272,36 +287,37 @@ const StudentForm = ({
                             {hasStatements ? (
                                 availableStatements.map(statement => (
                                     <button
-                                        key={statement.id}
-                                        className={`px-3 py-2 min-w-[220px] max-w-[220px] h-[50px] text-left rounded border shadow-sm transition-all flex flex-col justify-center relative group ${
-                                            selectedStatementId === statement.id
-                                                ? 'bg-teal-600 text-white border-teal-700 shadow-inner'
-                                                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-teal-300'
-                                        }`}
-                                        onClick={(e) => {
-                                            if (didDragRef.current) {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                return;
-                                            }
-                                            handleStatementSelect(statement.id);
-                                        }}
-                                        title={statement.disciplineName}
-                                    >
-                                        <div className="font-semibold text-sm leading-none mb-1 line-clamp-1">
-                                            {shortenFirstWord(statement.assessmentType)}
-                                        </div>
-                                        <div className={`text-xs leading-none line-clamp-1 overflow-hidden overflow-ellipsis ${
-                                            selectedStatementId === statement.id ? 'text-teal-100' : 'text-gray-500'
-                                        }`}>
-                                            {statement.disciplineName}
-                                        </div>
+  key={statement.id}
+  className={`px-3 py-2 min-w-[220px] max-w-[220px] h-[50px] text-left rounded border shadow-sm transition-all flex flex-col justify-center relative group ${
+    selectedStatementId === statement.id
+      ? 'bg-teal-600 text-white border-teal-700 shadow-inner'
+      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-teal-300'
+  }`}
+  onClick={(e) => {
+    if (didDragRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handleStatementSelect(statement.id);
+  }}
+  title={statement.disciplineName}
+>
+  <div className="font-semibold text-sm leading-none mb-1.5 line-clamp-1"> {/* Увеличено mb-1 → mb-1.5 */}
+    {shortenFirstWord(statement.assessmentType.charAt(0).toUpperCase() + statement.assessmentType.slice(1))}
+  </div>
+  <div className={`text-xs leading-none line-clamp-1 overflow-hidden overflow-ellipsis ${
+    selectedStatementId === statement.id ? 'text-teal-100' : 'text-gray-500'
+  }`}>
+    {statement.disciplineName}
+  </div>
 
-                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                                            {statement.disciplineName}
-                                            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-0 border-t-4 border-gray-800 border-l-transparent border-r-transparent"></div>
-                                        </div>
-                                    </button>
+  {/* Тултип с полным названием дисциплины */}
+  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+    {statement.disciplineName}
+    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-0 border-t-4 border-gray-800 border-l-transparent border-r-transparent"></div>
+  </div>
+</button>
                                 ))
                             ) : (
                                 <div className="px-3 py-2 min-w-[180px] h-[50px] flex flex-col justify-center text-center rounded border border-gray-200 bg-gray-100 text-gray-500">
@@ -317,7 +333,7 @@ const StudentForm = ({
                     {/* ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА */}
                     <div className="flex bg-white rounded-lg overflow-hidden h-[50px] border border-gray-300 min-w-[200px] shadow-sm">
                         <button
-                            className={`flex-1 px-3 text-xs flex items-center justify-center transition-all ${
+                            className={`flex-1 px-3 text-sm flex items-center justify-center transition-all ${
                                 mode === 'learning' 
                                     ? 'bg-teal-600 text-white font-medium shadow-inner' 
                                     : 'text-gray-700 hover:bg-gray-50 font-medium'
@@ -327,7 +343,7 @@ const StudentForm = ({
                             Текущее
                         </button>
                         <button
-                            className={`flex-1 px-3 text-xs flex items-center justify-center transition-all ${
+                            className={`flex-1 px-3 text-sm flex items-center justify-center transition-all ${
                                 mode === 'statement' 
                                     ? 'bg-teal-600 text-white font-medium shadow-inner' 
                                     : 'text-gray-700 hover:bg-gray-50 font-medium'
@@ -339,7 +355,7 @@ const StudentForm = ({
                     </div>
                 </div>
 
-                {/* ОСНОВНОЕ СОДЕРЖИМОЕ */}
+ 
                 {!hasStatements ? (
                     <div className="flex-1 flex items-center justify-center">
                         <div className="text-center  text-gray-500">
@@ -397,6 +413,13 @@ const StudentForm = ({
                 onDownload={mode === 'statement' ? () => {
                     downloadStatement(selectedStatementId);
                 } : null}
+                onSendByEmail={handleSendByEmail} // Добавлен обработчик
+            />
+            {/* Добавлено модальное окно для отправки email */}
+            <EmailSendModal
+                isOpen={isEmailSendModalOpen}
+                onClose={closeEmailSendModal}
+                statementId={selectedStatementId}
             />
         </>
     );

@@ -12,20 +12,26 @@ const AttestationForm = ({
   onShowWarning,
   onShowSuccess
 }) => {
-
-  
   const queryClient = useQueryClient();
   const [gradesMap, setGradesMap] = useState(new Map());
   const [changedGradesMap, setChangedGradesMap] = useState(new Map());
   const [focusedStudentIndices, setFocusedStudentIndices] = useState(new Map());
   const listRef = useRef(null);
-// В начале компонента (после state-хуков)
-const [originalGradesMap, setOriginalGradesMap] = useState(new Map());
-  // Получение текущих значений для выбранной ведомости
-  const getCurrentGrades = useCallback(() => {
-    return gradesMap.get(selectedStatementId) || {};
-  }, [gradesMap, selectedStatementId]);
+  const [originalGradesMap, setOriginalGradesMap] = useState(new Map());
+  const [modalOpen, setModalOpen] = useState(false);
 
+
+
+// Получение текущих значений для выбранной ведомости
+const getCurrentGrades = useCallback(() => {
+  const grades = gradesMap.get(selectedStatementId) || {};
+
+  console.log('[getCurrentGrades] selectedStatementId:', selectedStatementId);
+  console.log('[getCurrentGrades] gradesMap:', gradesMap);
+  console.log('[getCurrentGrades] grades:', grades);
+
+  return grades;
+}, [gradesMap, selectedStatementId]);
   const generateStatementMutation = useMutation({
     mutationFn: generateStatement,
     onSuccess: () => {
@@ -101,7 +107,7 @@ useEffect(() => {
 
   // Загружаем сохраненные локально изменения
   const savedGrades = JSON.parse(
-    localStorage.getItem(`grades_${selectedStatementId}`) || '{}'
+    localStorage.getItem(`attestation_grades_${selectedStatementId}`) || '{}'
   );
 
   const mergedGrades = { ...initialGrades };
@@ -133,7 +139,7 @@ useEffect(() => {
 
 // Функция сохранения в localStorage
 const saveGradesToLocalStorage = (statementId, grades) => {
-  localStorage.setItem(`grades_${statementId}`, JSON.stringify(grades));
+  localStorage.setItem(`attestation_grades_${statementId}`, JSON.stringify(grades));
 };
 
 // Обновленный обработчик изменения оценки
@@ -168,7 +174,7 @@ const handleCancel = useCallback(() => {
     setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
     
     // Удаляем из localStorage
-    localStorage.removeItem(`grades_${selectedStatementId}`);
+    localStorage.removeItem(`attestation_grades_${selectedStatementId}`);
   } else {
     handleCancelSelection();
   }
@@ -196,7 +202,7 @@ const handleSubmit = useCallback(async () => {
     setChangedGradesMap(prev => new Map(prev).set(selectedStatementId, {}));
     
     // Удаляем из localStorage
-    localStorage.removeItem(`grades_${selectedStatementId}`);
+    localStorage.removeItem(`attestation_grades_${selectedStatementId}`);
 
     const allGradesFilled = students.every(student => currentGrades[student.id]);
     
@@ -292,96 +298,104 @@ const handleSubmit = useCallback(async () => {
     }
   }, [selectedStatementId, students.length, scrollToStudent]);
 
-  // Обработка клавиш для навигации
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (!students.length) return;
 
-      let newIndex = currentFocusedIndex;
-      
-      if (['arrowup', 'arrowdown'].includes(e.key.toLowerCase())) {
-        e.preventDefault();
-      }
 
-      switch (e.key.toLowerCase()) {
-        case 'arrowup':
-        case 'w':
-        case 'ц':
-          newIndex = Math.max(0, currentFocusedIndex - 1);
-          break;
-        case 'arrowdown':
-        case 's':
-        case 'ы':
-          newIndex = Math.min(students.length - 1, currentFocusedIndex + 1);
-          break;
-        case 'home':
-          newIndex = 0;
-          break;
-        case 'end':
-          newIndex = students.length - 1;
-          break;
-        case 'pageup':
-          newIndex = Math.max(0, currentFocusedIndex - 10);
-          break;
-        case 'pagedown':
-          newIndex = Math.min(students.length - 1, currentFocusedIndex + 10);
-          break;
-        default:
-          return;
-      }
+// Функция для проверки открытых модальных окон
+const checkModalOpen = useCallback(() => {
+  return document.querySelector('.modal-open') !== null;
+}, []);
 
-      if (newIndex !== currentFocusedIndex) {
-        setFocusedStudentIndices(prev => new Map(prev).set(selectedStatementId, newIndex));
-        scrollToStudent(newIndex);
-        localStorage.setItem(`lastFocusedStudentIndex_${selectedStatementId}`, newIndex.toString());
-      }
-    };
+// Обновите обработчики клавиш, добавив проверку на модальные окна
+useEffect(() => {
+  const handleKeyDown = (e) => {
+    if (!students.length || checkModalOpen()) return;
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentFocusedIndex, students.length, scrollToStudent, selectedStatementId]);
+    let newIndex = currentFocusedIndex;
+    
+    if (['arrowup', 'arrowdown'].includes(e.key.toLowerCase())) {
+      e.preventDefault();
+    }
 
-  // Обработка клавиш для выставления оценок
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (!students.length) return;
+    switch (e.key.toLowerCase()) {
+      case 'arrowup':
+      case 'w':
+      case 'ц':
+        newIndex = Math.max(0, currentFocusedIndex - 1);
+        break;
+      case 'arrowdown':
+      case 's':
+      case 'ы':
+        newIndex = Math.min(students.length - 1, currentFocusedIndex + 1);
+        break;
+      case 'home':
+        newIndex = 0;
+        break;
+      case 'end':
+        newIndex = students.length - 1;
+        break;
+      case 'pageup':
+        newIndex = Math.max(0, currentFocusedIndex - 10);
+        break;
+      case 'pagedown':
+        newIndex = Math.min(students.length - 1, currentFocusedIndex + 10);
+        break;
+      default:
+        return;
+    }
 
-      const key = e.key;
-      const studentId = students[currentFocusedIndex]?.id;
-      const currentGrade = studentId ? currentGrades[studentId] || '' : '';
+    if (newIndex !== currentFocusedIndex) {
+      setFocusedStudentIndices(prev => new Map(prev).set(selectedStatementId, newIndex));
+      scrollToStudent(newIndex);
+      localStorage.setItem(`lastFocusedStudentIndex_${selectedStatementId}`, newIndex.toString());
+    }
+  };
 
-      const isDigit = /^[0-9]$/.test(key);
-      const isAbsent = key === 'н';
-      const isClear = key === 'Backspace' || key === 'Delete';
+  window.addEventListener('keydown', handleKeyDown);
+  return () => window.removeEventListener('keydown', handleKeyDown);
+}, [currentFocusedIndex, students.length, scrollToStudent, selectedStatementId, checkModalOpen]);
 
-      if ((isDigit || isAbsent) && filteredGrades.includes(key)) {
-        e.preventDefault();
-        handleGradeChange(studentId, key);
-      }
+// Обновите обработчик клавиш для выставления оценок
+useEffect(() => {
+  const handleKeyDown = (e) => {
+    if (!students.length || checkModalOpen()) return;
 
-      if (isClear) {
-        e.preventDefault();
-        handleGradeChange(studentId, '');
-      }
+    const key = e.key;
+    const studentId = students[currentFocusedIndex]?.id;
+    const currentGrade = studentId ? currentGrades[studentId] || '' : '';
 
-      if ((key === '+' || key === '=' || key === 'Add') && filteredGrades.length > 0) {
-        e.preventDefault();
-        const currentIndex = filteredGrades.indexOf(currentGrade);
-        const prevIndex = (currentIndex - 1 + filteredGrades.length) % filteredGrades.length;
-        handleGradeChange(studentId, filteredGrades[prevIndex]);
-      }
+    const isDigit = /^[0-9]$/.test(key);
+    const isAbsent = key === 'н';
+    const isClear = key === 'Backspace' || key === 'Delete';
 
-      if ((key === '-' || key === 'Subtract') && filteredGrades.length > 0) {
-        e.preventDefault();
-        const currentIndex = filteredGrades.indexOf(currentGrade);
-        const nextIndex = (currentIndex + 1) % filteredGrades.length;
-        handleGradeChange(studentId, filteredGrades[nextIndex]);
-      }
-    };
+    if ((isDigit || isAbsent) && filteredGrades.includes(key)) {
+      e.preventDefault();
+      handleGradeChange(studentId, key);
+    }
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentFocusedIndex, students, currentGrades, filteredGrades, handleGradeChange]);
+    if (isClear) {
+      e.preventDefault();
+      handleGradeChange(studentId, '');
+    }
+
+    if ((key === '+' || key === '=' || key === 'Add') && filteredGrades.length > 0) {
+      e.preventDefault();
+      const currentIndex = filteredGrades.indexOf(currentGrade);
+      const prevIndex = (currentIndex - 1 + filteredGrades.length) % filteredGrades.length;
+      handleGradeChange(studentId, filteredGrades[prevIndex]);
+    }
+
+    if ((key === '-' || key === 'Subtract') && filteredGrades.length > 0) {
+      e.preventDefault();
+      const currentIndex = filteredGrades.indexOf(currentGrade);
+      const nextIndex = (currentIndex + 1) % filteredGrades.length;
+      handleGradeChange(studentId, filteredGrades[nextIndex]);
+    }
+  };
+
+  window.addEventListener('keydown', handleKeyDown);
+  return () => window.removeEventListener('keydown', handleKeyDown);
+}, [currentFocusedIndex, students, currentGrades, filteredGrades, handleGradeChange, checkModalOpen]);
+
 
   if (loadingGrades) {
     return (

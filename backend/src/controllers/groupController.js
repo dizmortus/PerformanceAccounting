@@ -1,5 +1,6 @@
-import { Group, Specialty } from "../models/index.js";
-
+import { Group, Specialty, Discipline} from "../models/index.js";
+import { Statement } from "../models/index.js";
+import { Lesson, Grade, Student } from "../models/index.js";
 export const getGroupById = async (req, res) => {
     try {
         const { id } = req.params; // Получаем ID группы из параметров запроса
@@ -276,5 +277,254 @@ export const hasGroupDependencies = async (req, res) => {
             error: "Ошибка сервера при проверке зависимостей группы",
             details: error.message
         });
+    }
+};
+export const calculateGroupStatistics = async (groupId, semester = null, statementId = null) => {
+    const groupIdNum = Number(groupId);
+    if (isNaN(groupIdNum)) {
+        throw new Error(`Неверный ID группы: ${groupId}. Ожидается числовое значение.`);
+    }
+
+    console.log(`[STATISTICS] Начало расчета статистики для группы ID: ${groupIdNum}, семестр: ${semester}, ведомость: ${statementId}`);
+
+    try {
+        // 1. Получаем всех студентов группы
+        const students = await Student.findAll({
+            where: { groupId: groupIdNum }
+        });
+
+        if (!students.length) {
+            console.warn(`[STATISTICS] В группе ${groupIdNum} нет студентов. Возвращаем пустой результат.`);
+            return {
+                students: [],
+                groupAverage: null,
+                groupAttendance: null,
+                groupMissedLessons: null,
+                groupCertificationPercentage: null,
+                groupCertificationAverage: null
+            };
+        }
+
+        const studentIds = students.map(student => student.id);
+
+        // 2. Получаем ведомости в зависимости от параметров
+        let statements;
+        let isPracticeType = false; // Флаг для ведомостей типа "практика"
+        let isCourseProjectType = false; // Флаг для ведомостей типа "курсовой проект"
+        
+        if (statementId) {
+            const statement = await Statement.findByPk(statementId);
+            if (!statement) {
+                throw new Error(`Ведомость с ID ${statementId} не найдена.`);
+            }
+            statements = [statement];
+            isPracticeType = statement.assessmentType === 'практика';
+            isCourseProjectType = statement.assessmentType === 'курсовой проект';
+        } else if (semester) {
+            statements = await Statement.findAll({
+                where: { 
+                    groupId: groupIdNum,
+                    semester: semester 
+                }
+            });
+        } else {
+            statements = await Statement.findAll({
+                where: { groupId: groupIdNum }
+            });
+        }
+
+        if (!statements.length) {
+            console.warn(`[STATISTICS] Не найдено ведомостей для группы ${groupIdNum} с указанными параметрами. Возвращаем пустой результат.`);
+            return {
+                students: [],
+                groupAverage: null,
+                groupAttendance: null,
+                groupMissedLessons: null,
+                groupCertificationPercentage: null,
+                groupCertificationAverage: null
+            };
+        }
+
+        // 3. Собираем статистику по каждому студенту
+        const studentStats = {};
+        students.forEach(student => {
+            studentStats[student.id] = {
+                studentId: student.id,
+                lastName: student.lastName,
+                firstName: student.firstName,
+                patronymic: student.patronymic,
+                totalGradesSum: 0,
+                totalGradesCount: 0,
+                totalPossibleAttendances: 0,
+                missedLessons: 0,
+                certificationValues: [],
+                passedCertification: 0,
+                totalCertificationPossible: 0
+            };
+        });
+
+        // 4. Обрабатываем каждую ведомость
+        for (const statement of statements) {
+            const lessons = await Lesson.findAll({
+                where: { statementId: statement.id },
+                include: [{
+                    model: Grade,
+                    as: 'grades',
+                    attributes: ['studentId', 'value']
+                }],
+                attributes: ['id']
+            });
+
+            // Для ведомостей типа "практика" или "курсовой проект" пропускаем подсчет посещаемости
+            if (statement.assessmentType !== 'практика' && statement.assessmentType !== 'курсовой проект') {
+                for (const lesson of lessons) {
+                    for (const studentId of studentIds) {
+                        const stats = studentStats[studentId];
+                        stats.totalPossibleAttendances++;
+
+                        const grade = (lesson.grades || []).find(g => g.studentId === studentId);
+
+                        if (grade && grade.value === 'не явился') {
+                            stats.missedLessons++;
+                        } else if (grade && /^[0-9]+$/.test(grade.value)) {
+                            const numericGrade = parseInt(grade.value);
+                            stats.totalGradesSum += numericGrade;
+                            stats.totalGradesCount++;
+                        }
+                    }
+                }
+            }
+
+            // Аттестационные оценки
+            const certificationGradesRaw = await Grade.findAll({
+                where: { 
+                    statementId: statement.id,
+                    lessonId: null
+                },
+                attributes: ['studentId', 'value']
+            });
+            
+            for (const studentId of studentIds) {
+                const stats = studentStats[studentId];
+                const grade = certificationGradesRaw.find(g => g.studentId === studentId);
+            
+                if (!grade) continue;
+            
+                stats.totalCertificationPossible++;
+            
+                if (grade.value === 'зачтено' || (isCourseProjectType && grade.value === 'отлично')) {
+                    stats.passedCertification++;
+                    if (isCourseProjectType) {
+                        // Для курсового проекта преобразуем "отлично" в числовое значение
+                        stats.certificationValues.push(5);
+                    }
+                } else if (grade.value === 'не зачтено' || grade.value === 'не явился' || grade.value === 'не допущен') {
+                    // Ничего не добавляем
+                } else if (isCourseProjectType && grade.value === 'хорошо') {
+                    stats.passedCertification++;
+                    stats.certificationValues.push(4);
+                } else if (isCourseProjectType && grade.value === 'удовлетворительно') {
+                    stats.passedCertification++;
+                    stats.certificationValues.push(3);
+                } else if (/^[0-9]+$/.test(grade.value)) {
+                    const numericValue = parseInt(grade.value);
+                    stats.certificationValues.push(numericValue);
+                    if (numericValue >= 4) {
+                        stats.passedCertification++;
+                    }
+                }
+            }
+        }
+
+        // 5. Формируем результаты для каждого студента
+        const round = (num) => num !== null ? Math.round(num * 10) / 10 : null;
+        const results = [];
+
+        for (const studentId in studentStats) {
+            const stats = studentStats[studentId];
+            
+            // Для ведомостей типа "практика" или "курсовой проект" устанавливаем посещаемость и пропуски в null
+            const attendancePercentage = (isPracticeType || isCourseProjectType) 
+                ? null 
+                : stats.totalPossibleAttendances > 0
+                    ? ((stats.totalPossibleAttendances - stats.missedLessons) / stats.totalPossibleAttendances) * 100
+                    : 0;
+
+            const missedLessons = (isPracticeType || isCourseProjectType) ? null : stats.missedLessons;
+
+            const certificationPercentage = stats.totalCertificationPossible > 0
+                ? (stats.passedCertification / stats.totalCertificationPossible) * 100
+                : 0;
+
+            const averageGrade = stats.totalGradesCount > 0
+                ? stats.totalGradesSum / stats.totalGradesCount
+                : null;
+
+            let certificationGrade = null;
+            if (statementId && stats.certificationValues.length > 0) {
+                certificationGrade = stats.certificationValues[stats.certificationValues.length - 1];
+            } else if (stats.certificationValues.length > 0) {
+                certificationGrade = stats.certificationValues.reduce((sum, val) => sum + val, 0) / stats.certificationValues.length;
+            }
+
+            results.push({
+                studentId: stats.studentId,
+                lastName: stats.lastName,
+                firstName: stats.firstName,
+                patronymic: stats.patronymic,
+                attendancePercentage: round(attendancePercentage),
+                missedLessons: missedLessons,
+                totalPossibleAttendances: (isPracticeType || isCourseProjectType) ? null : stats.totalPossibleAttendances,
+                averageGrade: round(averageGrade),
+                certificationPercentage: round(certificationPercentage),
+                certificationGrade: round(certificationGrade)
+            });
+        }
+
+        // 6. Рассчитываем средние значения по группе
+        const validAttendance = results.filter(r => r.attendancePercentage !== null);
+        const groupAttendance = (isPracticeType || isCourseProjectType) 
+            ? null 
+            : validAttendance.length > 0
+                ? validAttendance.reduce((sum, r) => sum + r.attendancePercentage, 0) / validAttendance.length
+                : null;
+
+        const totalMissedLessons = results.reduce((sum, r) => sum + (r.missedLessons || 0), 0);
+        const groupMissedLessons = (isPracticeType || isCourseProjectType) 
+            ? null 
+            : results.length > 0 
+                ? totalMissedLessons / results.length
+                : null;
+
+        const validGrades = results.filter(r => r.averageGrade !== null);
+        const groupAverage = validGrades.length > 0
+            ? validGrades.reduce((sum, r) => sum + r.averageGrade, 0) / validGrades.length
+            : null;
+
+        const validCertPercentage = results.filter(r => r.certificationPercentage !== null);
+        const groupCertificationPercentage = validCertPercentage.length > 0
+            ? validCertPercentage.reduce((sum, r) => sum + r.certificationPercentage, 0) / validCertPercentage.length
+            : null;
+
+        const validCertGrades = results.filter(r => r.certificationGrade !== null);
+        const groupCertificationAverage = validCertGrades.length > 0
+            ? validCertGrades.reduce((sum, r) => sum + r.certificationGrade, 0) / validCertGrades.length
+            : null;
+
+        // 7. Формируем итоговый результат
+        const finalResult = {
+            students: results,
+            groupAverage: round(groupAverage),
+            groupAttendance: round(groupAttendance),
+            groupMissedLessons: round(groupMissedLessons),
+            groupCertificationPercentage: round(groupCertificationPercentage),
+            groupCertificationAverage: round(groupCertificationAverage)
+        };
+
+        console.log(`[STATISTICS] Итоговая статистика для группы ${groupIdNum}:`, JSON.stringify(finalResult, null, 2));
+        return finalResult;
+    } catch (error) {
+        console.error(`[STATISTICS] Ошибка при расчете статистики группы ${groupIdNum}:`, error);
+        throw error;
     }
 };

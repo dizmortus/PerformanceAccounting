@@ -1,100 +1,83 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchAllStatements, fetchAllTeachers, fetchAllDisciplines, getStatementStatistics } from "../../../utils/api";
+import { fetchAllStudents, fetchAllGroups, getStudentStatistics } from "../../../utils/api";
 import { useState, useMemo, useEffect } from "react";
 import WarningModal from '../../WarningModal';
 import SearchableSelect from '../SearchableSelect';
 import { useQueries } from "@tanstack/react-query";
 
-const useStatementStatistics = (statements) => {
+const useStudentStatistics = (students = [], semesterId) => {
     const statsQueries = useQueries({
-        queries: statements.map((statement) => ({
-            queryKey: ['statementStats', Number(statement.id)],
-            queryFn: () => getStatementStatistics(Number(statement.id)),
-            staleTime: 5 * 60 * 1000,
-            enabled: !isNaN(Number(statement.id)),
-        }))
+        queries: Array.isArray(students) 
+            ? students.map((student) => ({
+                queryKey: ['studentStats', Number(student.id), semesterId],
+                queryFn: () => getStudentStatistics(Number(student.id), semesterId),
+                staleTime: 5 * 60 * 1000,
+                enabled: !isNaN(Number(student.id)),
+            }))
+            : []
     });
 
-    return statements.map((statement, index) => ({
-        ...statement,
-        stats: statsQueries[index]?.data || null,
-    }));
+    return Array.isArray(students) 
+        ? students.map((student, index) => ({
+            ...student,
+            stats: statsQueries[index]?.data || null,
+        }))
+        : [];
 };
 
-const StatementStatisticsTable = ({ onCancel }) => {
+const StudentStatisticsTable = ({ semesterId, onCancel }) => {
     const queryClient = useQueryClient();
 
     const [filters, setFilters] = useState(() => {
         if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem("statements_stats_filters");
+            const saved = localStorage.getItem("students_stats_filters");
             return saved ? JSON.parse(saved) : {};
         }
         return {};
     });
 
     useEffect(() => {
-        localStorage.setItem("statements_stats_filters", JSON.stringify(filters));
+        localStorage.setItem("students_stats_filters", JSON.stringify(filters));
     }, [filters]);
 
-    const [sortColumn, setSortColumn] = useState(() => localStorage.getItem('statements_stats_sortColumn') || null);
-    const [sortDirection, setSortDirection] = useState(() => localStorage.getItem('statements_stats_sortDirection') || 'asc');
+    const [sortColumn, setSortColumn] = useState(() => localStorage.getItem('students_stats_sortColumn') || null);
+    const [sortDirection, setSortDirection] = useState(() => localStorage.getItem('students_stats_sortDirection') || 'asc');
 
-    const { data: statementsData = [], isLoading: isStatementsLoading } = useQuery({
-        queryKey: ['statements'],
-        queryFn: fetchAllStatements,
+    const { data: studentsData = [], isLoading: isStudentsLoading } = useQuery({
+        queryKey: ['students'],
+        queryFn: fetchAllStudents,
         staleTime: 5 * 60 * 1000,
     });
-
-    const { data: teachers = [] } = useQuery({
-        queryKey: ['teachers'],
-        queryFn: fetchAllTeachers,
+    const { data: groups = [] } = useQuery({
+        queryKey: ['groups'],
+        queryFn: fetchAllGroups,
         staleTime: 10 * 60 * 1000,
     });
 
-    const { data: disciplines = [] } = useQuery({
-        queryKey: ['disciplines'],
-        queryFn: fetchAllDisciplines,
-        staleTime: 10 * 60 * 1000,
-    });
-
-    const statementsWithStats = useStatementStatistics(statementsData);
-    const idOptions = useMemo(
-        () => statementsWithStats.map(s => s.id),
-        [statementsWithStats]
-    );
+    const studentsWithStats = useStudentStatistics(studentsData, semesterId);
     
-    const teacherOptions = useMemo(
-        () => teachers.map(t => ({
-            id: t.login,
-            name: `${t.lastName} ${t.firstName?.[0] || ''}.${t.patronymic?.[0] || ''}.`
-        })),
-        [teachers]
+    const studentOptions = useMemo(
+        () => Array.isArray(studentsWithStats) 
+            ? studentsWithStats.map(s => ({
+                id: s.id,
+                name: `${s.lastName} ${s.firstName} ${s.patronymic || ''}`
+            }))
+            : [],
+        [studentsWithStats]
     );
-    
     const groupOptions = useMemo(
-        () => [...new Set(statementsWithStats.map(s => s.groupId))],
-        [statementsWithStats]
+        () => Array.isArray(groups) 
+            ? groups.map(g => ({ id: g.id, name: g.name }))
+            : [],
+        [groups]
     );
     
-    const semesterOptions = useMemo(
-        () => [...new Set(statementsWithStats.map(s => s.semester))],
-        [statementsWithStats]
-    );
-    
-    const disciplineOptions = useMemo(
-        () => disciplines.map(d => ({ id: d.id, name: d.name })),
-        [disciplines]
-    );
-    
-    const filteredStatements = useMemo(() => {
-        return statementsWithStats.filter((statement) =>
-            (!filters.id || String(statement.id) === String(filters.id)) &&
-            (!filters.teacherLogin || statement.teacherLogin === filters.teacherLogin) &&
-            (!filters.groupId || String(statement.groupId) === String(filters.groupId)) &&
-            (!filters.semester || String(statement.semester) === String(filters.semester)) &&
-            (!filters.disciplineId || statement.disciplineId === filters.disciplineId)
+    const filteredStudents = useMemo(() => {
+        return studentsWithStats.filter((student) =>
+            (!filters.studentId || String(student.id) === String(filters.studentId)) &&
+            (!filters.groupId || String(student.groupId) === String(filters.groupId))
         );
-    }, [filters, statementsWithStats]);
+    }, [filters, studentsWithStats]);
 
     const sortData = (data) => {
         if (!sortColumn) return data;
@@ -110,15 +93,10 @@ const StatementStatisticsTable = ({ onCancel }) => {
         });
     };
 
-    const sortedStatements = sortData(filteredStatements);
+    const sortedStudents = sortData(filteredStudents);
 
-    const getTeacherName = (login) => {
-        const t = teachers.find(t => t.login === login);
-        return t ? `${t.lastName} ${t.firstName?.[0] || ''}.${t.patronymic?.[0] || ''}.` : "Неизвестный преподаватель";
-    };
-
-    const getDisciplineName = (id) => {
-        return disciplines.find(d => d.id === id)?.name || "Неизвестная дисциплина";
+    const getGroupName = (groupId) => {
+        return groups.find(g => g.id === groupId)?.name || "Неизвестная группа";
     };
 
     const handleFilterChange = (field, value) => {
@@ -127,8 +105,8 @@ const StatementStatisticsTable = ({ onCancel }) => {
 
     const handleSort = (col) => {
         const dir = sortColumn === col && sortDirection === "asc" ? "desc" : "asc";
-        localStorage.setItem('statements_stats_sortColumn', col);
-        localStorage.setItem('statements_stats_sortDirection', dir);
+        localStorage.setItem('students_stats_sortColumn', col);
+        localStorage.setItem('students_stats_sortDirection', dir);
         setSortColumn(col);
         setSortDirection(dir);
     };
@@ -139,31 +117,25 @@ const StatementStatisticsTable = ({ onCancel }) => {
     return (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-7xl bg-white p-6 rounded-lg shadow-lg flex flex-col" style={{ height: "calc(100vh - 2rem)", overflow: "hidden" }}>
             <h2 className="text-2xl font-semibold text-gray-900 text-center mb-4">
-                Статистика по группам
+                Статистика студентов (Семестр {semesterId})
             </h2>
-    
+
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className="overflow-x-auto flex-1">
-                    <table className="w-full text-sm text-gray-900 border-collapse table-fixed">
-                        <colgroup>
-                            <col style={{ width: '110px' }}/> {/* Преподаватель */}
-                            <col style={{ width: '70px' }}/>  {/* Группа */}
-                            <col style={{ width: '60px' }}/>  {/* Семестр */}
-                            <col style={{ width: '200px' }}/> {/* Дисциплина */}
-                            <col style={{ width: '100px' }}/> {/* Тип аттестации */}
-                            <col style={{ width: '80px' }}/>  {/* Посещаемость */}
-                            <col style={{ width: '75px' }}/> {/* Ср.балл */}
-                            <col style={{ width: '80px' }}/> {/* Аттестация %} */}
-                            <col style={{ width: '80px' }}/> {/* Ср.балл аттестации */}
-                        </colgroup>
+                <table className="w-full text-sm text-gray-900 border-collapse table-fixed">
+    <colgroup>
+        <col style={{ width: '200px' }} />
+        <col style={{ width: '100px' }} />
+        <col style={{ width: '80px' }} />
+        <col style={{ width: '75px' }} />
+        <col style={{ width: '80px' }} />
+        <col style={{ width: '80px' }} />
+    </colgroup>
                         <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
                             <tr className="h-[40px]">
                                 {[
-                                    'teacherLogin', 
-                                    'groupId', 
-                                    'semester', 
-                                    'disciplineId',
-                                    'assessmentType'
+                                    'student', 
+                                    'groupId'
                                 ].map((col, i, arr) => (
                                     <th
                                         key={col}
@@ -174,11 +146,8 @@ const StatementStatisticsTable = ({ onCancel }) => {
                                     >
                                         <div className="flex items-center h-full">
                                             {{
-                                                teacherLogin: "Преподаватель",
-                                                groupId: "Группа",
-                                                semester: "Сем.",
-                                                disciplineId: "Дисциплина",
-                                                assessmentType: "Тип аттестации"
+                                                student: "Студент",
+                                                groupId: "Группа"
                                             }[col]}
                                             {sortColumn === col && (
                                                 <span className="ml-1">
@@ -205,10 +174,10 @@ const StatementStatisticsTable = ({ onCancel }) => {
                                     >
                                         <div className="flex flex-col items-center justify-center h-full">
                                             {{
-                                                'stats.overallAverage': "Ср.балл по<br>занятиям",
-                                                'stats.attendancePercentage': "Посещаемость<br>занятий",
-                                                'stats.certificationPercentage': "Процент<br>аттестации",
-                                                'stats.certificationAverage': "Ср.балл по<br>аттестации"
+                                                'stats.overallAverage': "Ср.балл",
+                                                'stats.attendancePercentage': "Посещаемость",
+                                                'stats.certificationPercentage': "Аттестация %",
+                                                'stats.certificationAverage': "Ср.балл аттестации"
                                             }[col].split('<br>').map((line, i) => (
                                                 <span key={i}>{line}</span>
                                             ))}
@@ -221,15 +190,12 @@ const StatementStatisticsTable = ({ onCancel }) => {
                                     </th>
                                 ))}
                             </tr>
-    
+
                             <tr className="h-[40px]">
                                 {[
-                                    { field: "teacherLogin", options: teacherOptions, isTeacher: true },
-                                    { field: "groupId", options: groupOptions },
-                                    { field: "semester", options: semesterOptions },
-                                    { field: "disciplineId", options: disciplineOptions, isDiscipline: true },
-                                    { field: "assessmentType", options: [...new Set(statementsWithStats.map(s => s.assessmentType))] }
-                                ].map(({ field, options, isTeacher, isDiscipline }, i, arr) => (
+                                    { field: "studentId", options: studentOptions, isStudent: true },
+                                    { field: "groupId", options: groupOptions }
+                                ].map(({ field, options, isStudent }, i, arr) => (
                                     <td key={field} className={`px-2 border-b-0 ${
                                         i === 0 ? "rounded-bl-lg" : ""
                                     }`}>
@@ -241,14 +207,12 @@ const StatementStatisticsTable = ({ onCancel }) => {
                                                     onChange={(value) => handleFilterChange(field, value)}
                                                     placeholder="Фильтр"
                                                     formatOption={(option) => 
-                                                        isTeacher ? option.name :
-                                                        isDiscipline ? option.name :
-                                                        option.toString()
+                                                        isStudent ? option.name :
+                                                        option.name
                                                     }
                                                     getOptionValue={(option) => 
-                                                        isTeacher ? option.id :
-                                                        isDiscipline ? option.id :
-                                                        option
+                                                        isStudent ? option.id :
+                                                        option.id
                                                     }
                                                     className="w-full"
                                                     fontSize="sm"
@@ -269,58 +233,46 @@ const StatementStatisticsTable = ({ onCancel }) => {
                             </tr>
                         </thead>
                         <tbody>
-                            {isStatementsLoading ? (
+                            {isStudentsLoading ? (
                                 <tr>
-                                    <td colSpan="9" className="py-4 text-center">Загрузка данных...</td>
+                                    <td colSpan="6" className="py-4 text-center">Загрузка данных...</td>
                                 </tr>
-                            ) : statementsWithStats.length === 0 ? (
+                            ) : studentsWithStats.length === 0 ? (
                                 <tr>
-                                    <td colSpan="9" className="py-4 text-center">Нет данных о ведомостях</td>
+                                    <td colSpan="6" className="py-4 text-center">Нет данных о студентах</td>
                                 </tr>
                             ) : (
-                                sortedStatements.map((statement, index) => {
-                                    const teacherFullName = getTeacherName(statement.teacherLogin);
-                                    const disciplineName = getDisciplineName(statement.disciplineId);
-    
+                                sortedStudents.map((student, index) => {
+                                    const studentName = `${student.lastName} ${student.firstName} ${student.patronymic || ''}`;
+                                    const groupName = getGroupName(student.groupId);
+
                                     return (
                                         <tr
-                                            key={statement.id || `statement-${index}`}
+                                            key={student.id || `student-${index}`}
                                             className={`${index % 2 === 0 ? "bg-gray-100" : "bg-gray-200"} border-b-0 hover:bg-gray-50 cursor-pointer`}
                                         >
-                                            <td className="py-3 px-4 rounded-l-lg truncate" title={teacherFullName}>
-                                                {teacherFullName}
+                                            <td className="py-3 px-4 rounded-l-lg truncate" title={studentName}>
+                                                {studentName}
                                             </td>
-    
+
                                             <td className="py-3 px-4 truncate">
-                                                {statement.groupId}
+                                                {groupName}
                                             </td>
-    
+
                                             <td className="py-3 px-4 truncate">
-                                                {statement.semester}
+                                                {student.stats?.attendancePercentage ? `${student.stats.attendancePercentage}%` : '-'}
                                             </td>
-    
-                                            <td className="py-3 px-4 truncate" title={disciplineName}>
-                                                {disciplineName}
-                                            </td>
-    
+
                                             <td className="py-3 px-4 truncate">
-                                                {statement.assessmentType || '-'}
+                                                {student.stats?.overallAverage?.toFixed(2) || '-'}
                                             </td>
-    
+
                                             <td className="py-3 px-4 truncate">
-                                                {statement.stats?.attendancePercentage ? `${statement.stats.attendancePercentage}%` : '-'}
+                                                {student.stats?.certificationPercentage ? `${student.stats.certificationPercentage}%` : '-'}
                                             </td>
-    
-                                            <td className="py-3 px-4 truncate">
-                                                {statement.stats?.overallAverage?.toFixed(2) || '-'}
-                                            </td>
-    
-                                            <td className="py-3 px-4 truncate">
-                                                {statement.stats?.certificationPercentage ? `${statement.stats.certificationPercentage}%` : '-'}
-                                            </td>
-    
+
                                             <td className="py-3 px-4 rounded-r-lg truncate">
-                                                {statement.stats?.certificationAverage || '-'}
+                                                {student.stats?.certificationAverage?.toFixed(2) || '-'}
                                             </td>
                                         </tr>
                                     );
@@ -330,7 +282,7 @@ const StatementStatisticsTable = ({ onCancel }) => {
                     </table>
                 </div>
             </div>
-    
+
             <WarningModal 
                 isOpen={isErrorModalOpen}
                 onClose={() => setIsErrorModalOpen(false)}
@@ -340,4 +292,4 @@ const StatementStatisticsTable = ({ onCancel }) => {
     );
 };
 
-export default StatementStatisticsTable;
+export default StudentStatisticsTable;

@@ -12,7 +12,7 @@ export const getTeacherStatements = async (req, res) => {
         const now = new Date();
         const currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-        // Получаем все ведомости преподавателя (как основного, так и преподавателя занятий)
+        // Получаем все ведомости преподавателя
         const statements = await Statement.findAll({
             where: {
                 [Op.or]: [
@@ -33,82 +33,83 @@ export const getTeacherStatements = async (req, res) => {
                 }
             ],
             attributes: [
-                "id",
-                "teacherLogin",
-                "classTeacherLogin",
-                "disciplineId",
-                "groupId",
-                "practiceHours",
-                "semester",
-                "assessmentType",
-                "creditUnits",
-                "date",
-                "list"
+                "id", "teacherLogin", "classTeacherLogin", "disciplineId", 
+                "groupId", "practiceHours", "semester", "assessmentType", 
+                "creditUnits", "date", "list"
             ],
             order: [['date', 'DESC']]
         });
 
-        // Функция для вычисления текущего семестра группы
+        // Функция расчета текущего семестра
         const calculateCurrentSemester = (admissionYear) => {
             const currentYear = now.getFullYear();
-            const month = now.getMonth() + 1; // 1-12
+            const month = now.getMonth() + 1;
+            let yearsPassed = currentYear - admissionYear;
             
-            let academicYearsPassed = currentYear - admissionYear;
-            
-            if (month >= 1 && month < 9) {
-                academicYearsPassed -= 1;
-            }
+            if (month >= 1 && month < 9) yearsPassed -= 1;
             
             const isFirstSemester = (month >= 9) || (month === 1 && now.getDate() <= 15);
-            const currentSemesterNumber = isFirstSemester ? 1 : 2;
-            
-            return (academicYearsPassed * 2) + currentSemesterNumber;
+            return (yearsPassed * 2) + (isFirstSemester ? 1 : 2);
         };
 
-        // Фильтруем ведомости по условиям
-        const filteredStatements = statements.filter(statement => {
+        // Обрабатываем ведомости с учетом двойной принадлежности
+        const result = statements.map(statement => {
             const isMainTeacher = statement.teacherLogin === login;
             const isClassTeacher = statement.classTeacherLogin === login;
             const hasNoList = !statement.list || statement.list === '[]';
             const isExamType = ['зачет', 'экзамен', 'дифференцированный зачет'].includes(statement.assessmentType);
             const isPracticeType = ['практика', 'курсовой проект'].includes(statement.assessmentType);
+
+            // Определяем типы ведомости
+            const types = [];
             
-            // Для основного преподавателя
-            if (isMainTeacher) {
-                if (isExamType) {
-                    // Для экзаменационных типов - проверяем дату
-                    if (statement.date) {
-                        const statementDate = new Date(statement.date);
-                        const normalizedStatementDate = new Date(
-                            statementDate.getFullYear(),
-                            statementDate.getMonth(),
-                            statementDate.getDate()
-                        );
-                        
-                        return normalizedStatementDate.getTime() === currentDate.getTime() && hasNoList;
-                    }
-                    return false;
-                } else if (isPracticeType) {
-                    // Для практик - проверяем семестр
-                    const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
-                    return currentSemester === statement.semester && hasNoList;
-                }
-            }
-            
-            // Для преподавателя занятий
+            // Проверка для преподавателя занятий (learning)
             if (isClassTeacher && isExamType) {
                 const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
-                return currentSemester === statement.semester && hasNoList;
+                if (currentSemester === statement.semester && hasNoList) {
+                    types.push('learning');
+                }
             }
-            
-            return false;
-        });
 
-        // Форматируем результат, чтобы включить название дисциплины
-        const result = filteredStatements.map(statement => ({
-            ...statement.get({ plain: true }),
-            disciplineName: statement.discipline ? statement.discipline.name : null
-        }));
+            // Проверка для основного преподавателя (main)
+            if (isMainTeacher) {
+                if (isExamType && statement.date) {
+                    const statementDate = new Date(statement.date);
+                    const normalizedDate = new Date(
+                        statementDate.getFullYear(),
+                        statementDate.getMonth(),
+                        statementDate.getDate()
+                    );
+                    
+                    if (normalizedDate.getTime() === currentDate.getTime() && hasNoList) {
+                        types.push('main');
+                    }
+                } 
+                else if (isPracticeType) {
+                    const currentSemester = calculateCurrentSemester(statement.group.admissionYear);
+                    if (currentSemester === statement.semester && hasNoList) {
+                        types.push('main');
+                    }
+                }
+            }
+
+            // Возвращаем ведомость с информацией о типах
+            return {
+                ...statement.get({ plain: true }),
+                disciplineName: statement.discipline?.name,
+                statementTypes: types, // Может содержать оба типа
+                isValid: types.length > 0 // Флаг валидности
+            };
+        }).filter(statement => statement.isValid); // Фильтруем только валидные ведомости
+
+        // Логируем результат
+        console.log('Обработанные ведомости:', result.map(s => ({
+            id: s.id,
+            types: s.statementTypes,
+            discipline: s.disciplineName,
+            semester: s.semester,
+            assessmentType: s.assessmentType
+        })));
 
         res.json(result);
     } catch (error) {
@@ -369,15 +370,42 @@ export const getAllStatements = async (req, res) => {
 };
 
 /**
- * Рассчитывает среднюю оценку для каждого студента по всем занятиям ведомости
+ * Находит связанную ведомость для курсового проекта
+ * @param {number} statementId - ID ведомости курсового проекта
+ * @returns {Promise<Statement|null>} - Найденная связанная ведомость или null
+ */
+const findRelatedStatement = async (statementId) => {
+    const currentStatement = await Statement.findByPk(statementId);
+    if (!currentStatement || currentStatement.assessmentType !== 'курсовой проект') {
+        return null;
+    }
+
+    return await Statement.findOne({
+        where: {
+            groupId: currentStatement.groupId,
+            semester: currentStatement.semester,
+            disciplineId: currentStatement.disciplineId,
+            assessmentType: {
+                [Op.ne]: 'курсовой проект'
+            }
+        }
+    });
+};
+
+/**
+ * Рассчитывает среднюю оценку для каждого студента
  * @param {number} statementId - ID ведомости
  * @returns {Promise<Object>} - Объект с studentId в качестве ключа и средней оценкой в качестве значения
  */
 export const calculateAverageGrades = async (statementId) => {
     try {
-        // Находим все занятия для данной ведомости
+        // Проверяем, является ли ведомость курсовым проектом
+        const relatedStatement = await findRelatedStatement(statementId);
+        const targetStatementId = relatedStatement ? relatedStatement.id : statementId;
+
+        // Находим все занятия для целевой ведомости
         const lessons = await Lesson.findAll({
-            where: { statementId },
+            where: { statementId: targetStatementId },
             attributes: ['id']
         });
 
@@ -387,7 +415,7 @@ export const calculateAverageGrades = async (statementId) => {
 
         const lessonIds = lessons.map(lesson => lesson.id);
 
-        // Получаем только числовые оценки от 0 до 10 для этих занятий
+        // Получаем числовые оценки
         const grades = await Grade.findAll({
             where: {
                 lessonId: lessonIds,
@@ -408,18 +436,18 @@ export const calculateAverageGrades = async (statementId) => {
             studentGrades[grade.studentId].push(numericValue);
         });
 
-        // Получаем всех студентов ведомости
-        const statement = await Statement.findByPk(statementId);
+        // Получаем студентов исходной ведомости
+        const originalStatement = await Statement.findByPk(statementId);
         const students = await Student.findAll({
-            where: { groupId: statement.groupId },
+            where: { groupId: originalStatement.groupId },
             attributes: ['id']
         });
 
-        // Рассчитываем среднее для каждого студента
+        // Рассчитываем среднее
         const averages = {};
         students.forEach(student => {
             const studentId = student.id;
-            if (studentGrades[studentId] && studentGrades[studentId].length > 0) {
+            if (studentGrades[studentId]?.length > 0) {
                 const sum = studentGrades[studentId].reduce((a, b) => a + b, 0);
                 averages[studentId] = sum / studentGrades[studentId].length;
             } else {
@@ -435,15 +463,19 @@ export const calculateAverageGrades = async (statementId) => {
 };
 
 /**
- * Подсчитывает количество пропусков ("не явился") для каждого студента по всем занятиям ведомости
+ * Подсчитывает количество пропусков для каждого студента
  * @param {number} statementId - ID ведомости
- * @returns {Promise<Object>} - Объект с studentId в качестве ключа и количеством пропусков в качестве значения
+ * @returns {Promise<Object>} - Объект с studentId в качестве ключа и количеством пропусков
  */
 export const countMissedLessons = async (statementId) => {
     try {
-        // Находим все занятия для данной ведомости
+        // Проверяем, является ли ведомость курсовым проектом
+        const relatedStatement = await findRelatedStatement(statementId);
+        const targetStatementId = relatedStatement ? relatedStatement.id : statementId;
+
+        // Находим занятия для целевой ведомости
         const lessons = await Lesson.findAll({
-            where: { statementId },
+            where: { statementId: targetStatementId },
             attributes: ['id']
         });
 
@@ -453,7 +485,7 @@ export const countMissedLessons = async (statementId) => {
 
         const lessonIds = lessons.map(lesson => lesson.id);
 
-        // Получаем все оценки "не явился" для этих занятий
+        // Считаем пропуски
         const missedGrades = await Grade.findAll({
             where: {
                 lessonId: lessonIds,
@@ -464,22 +496,16 @@ export const countMissedLessons = async (statementId) => {
             raw: true
         });
 
-        // Преобразуем результат в удобный формат
+        // Форматируем результат
         const missedCounts = {};
         missedGrades.forEach(grade => {
             missedCounts[grade.studentId] = grade.missedCount;
         });
 
         // Добавляем студентов с нулевыми пропусками
-        const statement = await Statement.findByPk(statementId);
-        if (!statement) {
-            return missedCounts;
-        }
-
+        const originalStatement = await Statement.findByPk(statementId);
         const students = await Student.findAll({
-            where: {
-                groupId: statement.groupId
-            },
+            where: { groupId: originalStatement.groupId },
             attributes: ['id'],
             raw: true
         });
@@ -565,6 +591,7 @@ export const getStatementByGroupDisciplineSemester = async (req, res) => {
         res.status(500).json({ error: "Ошибка сервера" });
     }
 };
+
 export const calculateStatementStatistics = async (statementId) => {
     const id = Number(statementId);
     if (isNaN(id)) {
@@ -574,7 +601,31 @@ export const calculateStatementStatistics = async (statementId) => {
     console.log(`[STATISTICS] Начало расчета статистики для ведомости ID: ${id}`);
 
     try {
-        // 1. Получаем все занятия ведомости
+        // 1. Получаем ведомость
+        const statement = await Statement.findByPk(id);
+        if (!statement) {
+            throw new Error(`Ведомость с ID ${id} не найдена.`);
+        }
+
+        // 2. Получаем всех студентов группы
+        const students = await Student.findAll({
+            where: { groupId: statement.groupId }
+        });
+
+        if (!students.length) {
+            console.warn(`[STATISTICS] В группе ведомости ${id} нет студентов. Возвращаем null значения.`);
+            return {
+                overallAverage: null,
+                attendancePercentage: null,
+                certificationPercentage: null,
+                certificationAverage: null
+            };
+        }
+
+        const studentIds = students.map(student => student.id);
+        const totalStudents = studentIds.length;
+
+        // 3. Получаем все занятия ведомости
         const lessons = await Lesson.findAll({
             where: { statementId: id },
             include: [{
@@ -599,39 +650,34 @@ export const calculateStatementStatistics = async (statementId) => {
         let totalGradesCount = 0;
         let totalPossibleAttendances = 0;
         let actualAttendances = 0;
-        const studentIds = new Set();
-        const missedCounts = {}; // Добавляем объект для подсчета пропусков
+        const missedCounts = {};
 
         for (const lesson of lessons) {
-            let lessonSum = 0;
-            let lessonCount = 0;
-            
-            for (const grade of (lesson.grades || [])) {
-                studentIds.add(grade.studentId);
-                
-                if (/^[0-9]+$/.test(grade.value)) {
-                    const numericValue = parseInt(grade.value);
-                    lessonSum += numericValue;
-                    lessonCount++;
-                    totalGradesSum += numericValue;
-                    totalGradesCount++;
-                    actualAttendances++;
-                } else if (grade.value === 'не явился') {
-                    // Учитываем пропуски
-                    missedCounts[grade.studentId] = (missedCounts[grade.studentId] || 0) + 1;
+            for (const studentId of studentIds) {
+                const grade = (lesson.grades || []).find(g => g.studentId === studentId);
+
+                if (grade) {
+                    if (/^[0-9]+$/.test(grade.value)) {
+                        const numericValue = parseInt(grade.value);
+                        totalGradesSum += numericValue;
+                        totalGradesCount++;
+                        actualAttendances++;
+                    } else if (grade.value === 'не явился') {
+                        missedCounts[studentId] = (missedCounts[studentId] || 0) + 1;
+                    }
                 }
+                // Убрано подсчет отсутствия оценки как пропуска
+                // Теперь пропуском считается только явное "не явился"
             }
-            
-            // Учитываем всех студентов для возможных посещений
-            totalPossibleAttendances += studentIds.size;
+
+            totalPossibleAttendances += totalStudents;
         }
 
-        const totalStudents = studentIds.size;
         const totalMissed = Object.values(missedCounts).reduce((sum, count) => sum + count, 0);
         actualAttendances = totalPossibleAttendances - totalMissed;
 
-        // Расчёт оценок, связанных напрямую с ведомостью (аттестационные оценки)
-        console.log(`[STATISTICS] Получение оценок, связанных напрямую с ведомостью ID: ${id}`);
+        // 4. Получаем аттестационные оценки
+        console.log(`[STATISTICS] Получение аттестационных оценок для ведомости ID: ${id}`);
         const certificationGradesRaw = await Grade.findAll({
             where: { statementId: id },
             attributes: ['studentId', 'value']
@@ -641,14 +687,20 @@ export const calculateStatementStatistics = async (statementId) => {
         let totalCertificationPossible = totalStudents;
         let passedCertification = 0;
 
-        for (const grade of certificationGradesRaw) {
-            if (grade.value === 'зачет' || grade.value === 'незачет') {
-                if (grade.value === 'зачет') {
-                    certificationValues.push(1);
-                    passedCertification++;
-                } else {
-                    certificationValues.push(0);
-                }
+        for (const studentId of studentIds) {
+            const grade = certificationGradesRaw.find(g => g.studentId === studentId);
+
+            if (!grade) {
+                // Нет оценки — студент не допущен
+                totalCertificationPossible--;
+                continue;
+            }
+
+            if (grade.value === 'зачет') {
+                certificationValues.push(1);
+                passedCertification++;
+            } else if (grade.value === 'незачет') {
+                certificationValues.push(0);
             } else if (/^[0-9]+$/.test(grade.value)) {
                 const numericValue = parseInt(grade.value);
                 certificationValues.push(numericValue);
@@ -656,16 +708,15 @@ export const calculateStatementStatistics = async (statementId) => {
                     passedCertification++;
                 }
             } else if (grade.value === 'не допущен') {
-                totalCertificationPossible--; // Уменьшаем общее количество для аттестации
+                totalCertificationPossible--;
             }
         }
 
-        // Расчет процента посещаемости
+        // 5. Расчеты
         const attendancePercentage = totalPossibleAttendances > 0
             ? (actualAttendances / totalPossibleAttendances) * 100
             : 0;
 
-        // Расчет процента аттестации
         const certificationPercentage = totalCertificationPossible > 0
             ? (passedCertification / totalCertificationPossible) * 100
             : 0;
@@ -678,13 +729,13 @@ export const calculateStatementStatistics = async (statementId) => {
             ? (certificationValues.reduce((sum, val) => sum + val, 0) / certificationValues.length)
             : null;
 
+        const round = (num) => num !== null ? Math.round(num * 10) / 10 : null;
+
         const result = {
-            overallAverage,
-            attendancePercentage: attendancePercentage.toFixed(1),
-            certificationPercentage: certificationPercentage.toFixed(1),
-            certificationAverage: certificationAverage !== null
-                ? certificationAverage.toFixed(1)
-                : null
+            overallAverage: round(overallAverage),
+            attendancePercentage: round(attendancePercentage),
+            certificationPercentage: round(certificationPercentage),
+            certificationAverage: round(certificationAverage)
         };
 
         console.log(`[STATISTICS] Итоговая статистика для ведомости ${id}:`, JSON.stringify(result, null, 2));

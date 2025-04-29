@@ -1,4 +1,3 @@
-// src/utils/auth.js
 import { refreshAccessToken } from './api';
 import { jwtDecode } from 'jwt-decode';
 
@@ -14,7 +13,7 @@ export const checkAuth = async (requiredRole, router) => {
 
     if (!token) {
         try {
-            token = await refreshAccessToken(refreshTokenValue);
+            token = await refreshAccessToken(refreshTokenValue);    
             if (!token) {
                 console.warn("Не удалось обновить accessToken. Перенаправление на страницу логина.");
                 router.push("/login");
@@ -31,7 +30,6 @@ export const checkAuth = async (requiredRole, router) => {
     try {
         const decodedToken = jwtDecode(token);
         
-        // Проверка статуса из токена
         if (decodedToken.status === 'Заблокированный') {
             console.warn("Пользователь заблокирован. Перенаправление на страницу логина.");
             localStorage.removeItem("accessToken");
@@ -40,11 +38,11 @@ export const checkAuth = async (requiredRole, router) => {
             return { isAuthenticated: false, login: '' };
         }
 
-        // Проверка роли
         const userRole = decodedToken.role;
         const roleMismatch = 
             (requiredRole === "admin" && userRole !== "Администратор") ||
-            (requiredRole === "teacher" && userRole !== "Преподаватель");
+            (requiredRole === "teacher" && userRole !== "Преподаватель") ||
+            (requiredRole === "guest" && userRole !== "Гость");
 
         if (roleMismatch) {
             console.warn("Роль не соответствует. Перенаправление на страницу логина.");
@@ -57,5 +55,107 @@ export const checkAuth = async (requiredRole, router) => {
         console.error("Ошибка при проверке авторизации:", error);
         router.push("/login");
         return { isAuthenticated: false, login: '' };
+    }
+};
+
+/**
+ * Инициирует процесс сброса пароля
+ * @param {string} login - Логин пользователя
+ * @returns {Promise<{message: string, maskedEmail: string, expiresIn: number}>}
+ */
+export const initiatePasswordReset = async (login) => {
+    try {
+        const response = await fetch('/api/auth/initiate-password-reset', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ login })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || data.message || 'Не удалось инициировать сброс пароля');
+        }
+
+        return data;
+    } catch (error) {
+        console.error('Ошибка при инициации сброса пароля:', error);
+        throw new Error('Сервер недоступен. Пожалуйста, попробуйте позже.');
+    }
+};
+
+export const verifyResetCode = async (login, code) => {
+    try {
+        const response = await fetch('/api/auth/verify-reset-code', {  // Добавлен /api/
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ login, code })
+        });
+
+        // Проверяем content-type перед парсингом JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(text || 'Неверный ответ сервера');
+        }
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || data.message || 'Не удалось подтвердить код');
+        }
+
+        return data;
+    } catch (error) {
+        console.error('Ошибка при подтверждении кода:', error);
+        throw new Error(error.message || 'Ошибка при проверке кода');
+    }
+};
+
+/**
+ * Устанавливает новый пароль после подтверждения кода
+ * @param {string} login - Логин пользователя
+ * @param {string} newPassword - Новый пароль
+ * @returns {Promise<{message: string, status: string}>}
+ */
+export const changePasswordAfterReset = async (login, newPassword) => {
+    console.log('changePasswordAfterReset вызван с параметрами:', { login, newPassword });
+
+    try {
+        const requestBody = JSON.stringify({ login, newPassword });
+        console.log('Отправка запроса на /api/auth/change-password с body:', requestBody);
+
+        const response = await fetch('/api/auth/change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: requestBody,
+        });
+
+        console.log('Ответ сервера получен:', response.status, response.statusText);
+
+        if (!response.ok) {
+            let errorData;
+            try {
+                errorData = await response.json();
+                console.error('Ошибка в ответе сервера:', errorData);
+            } catch (jsonError) {
+                console.error('Ошибка при чтении тела ошибки:', jsonError);
+            }
+            throw new Error(errorData?.error || 'Не удалось изменить пароль');
+        }
+
+        const responseData = await response.json();
+        console.log('Успешный ответ сервера:', responseData);
+
+        return responseData;
+    } catch (error) {
+        console.error('Ошибка при смене пароля:', error);
+        throw error;
     }
 };
