@@ -370,7 +370,7 @@ const fileOptions = useMemo(() => [
                                 <col style={{ width: '60px' }}/>
                                 <col style={{ width: getColumnWidth('date', '75px') }}/>
                                 <col style={{ width: getColumnWidth('assessmentType', '80px') }}/>
-                                <col style={{ width: getColumnWidth('list', '75px') }}/>
+                                <col style={{ width: getColumnWidth('list', '60px') }}/>
                                 <col style={{ width: '40px' }}/>
                             </colgroup>
                             <thead className="sticky top-0 bg-gray-300 rounded-t-lg z-10">
@@ -521,11 +521,6 @@ const fileOptions = useMemo(() => [
                                                     onClick={() => handleCellClick("Преподаватель", teacherFullName, statement.teacherLogin)}
                                                 >
                                                     <div className="truncate">{teacherFullName}</div>
-                                                    {classTeacherName && (
-                                                        <div className="text-xs text-gray-500 truncate" title={classTeacherName}>
-                                                            {classTeacherName}
-                                                        </div>
-                                                    )}
                                                 </td>
                                                 
                                                 {/* Группа */}
@@ -605,7 +600,7 @@ const fileOptions = useMemo(() => [
                                                             >
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                                             </svg>
-                                                            <span className="truncate">Скачать</span>
+                                                
                                                         </button>
                                                     ) : (
                                                         "Нет файла"

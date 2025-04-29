@@ -1,6 +1,9 @@
-import { Group, Specialty, Discipline} from "../models/index.js";
+import { Group, Specialty, Faculty} from "../models/index.js";
 import { Statement } from "../models/index.js";
 import { Lesson, Grade, Student } from "../models/index.js";
+import sequelize from '../config/db.js';
+import { Op } from 'sequelize';
+
 export const getGroupById = async (req, res) => {
     try {
         const { id } = req.params; // Получаем ID группы из параметров запроса
@@ -144,16 +147,31 @@ export const createGroup = async (req, res) => {
 
 
 export const updateGroup = async (req, res) => {
-    const { id } = req.params;
-    const { specialtyId, admissionYear, educationForm, educationLevel } = req.body;
+    const { id: oldId } = req.params;
+    const { id: newId, specialtyId, admissionYear, educationForm, educationLevel } = req.body;
 
     try {
-        const group = await Group.findByPk(id);
+        // Находим группу
+        const group = await Group.findByPk(oldId, {
+            include: [
+                { model: Student, as: 'students' },
+                { model: Statement, as: 'groupStatements' }
+            ]
+        });
+        
         if (!group) {
             return res.status(404).json({ error: "Группа не найдена" });
         }
 
-        // Проверяем существование специальности, если она меняется
+        // Проверяем новый ID, если он предоставлен
+        if (newId && newId !== oldId) {
+            const existingGroup = await Group.findByPk(newId);
+            if (existingGroup) {
+                return res.status(400).json({ error: "Группа с таким ID уже существует" });
+            }
+        }
+
+        // Проверяем существование специальности
         if (specialtyId && specialtyId !== group.specialtyId) {
             const specialty = await Specialty.findByPk(specialtyId);
             if (!specialty) {
@@ -186,22 +204,87 @@ export const updateGroup = async (req, res) => {
             });
         }
 
-        // Обновляем данные группы
-        await group.update({
+        // Подготавливаем данные для обновления
+        const updateData = {
+            id: newId || group.id,
             specialtyId: specialtyId || group.specialtyId,
             admissionYear: admissionYear || group.admissionYear,
             educationForm: educationForm || group.educationForm,
             educationLevel: educationLevel || group.educationLevel
+        };
+
+        // Используем транзакцию для атомарности операций
+        await sequelize.transaction(async (t) => {
+            if (newId && newId !== oldId) {
+                // 1. Обновляем ID группы
+                await Group.update(
+                    { id: newId },
+                    {
+                        where: { id: oldId },
+                        transaction: t
+                    }
+                );
+
+                // 2. Каскадное обновление студентов группы
+                if (group.students && group.students.length > 0) {
+                    await Student.update(
+                        { groupId: newId },
+                        {
+                            where: { groupId: oldId },
+                            transaction: t
+                        }
+                    );
+                }
+
+                // 3. Каскадное обновление ведомостей группы
+                if (group.groupStatements && group.groupStatements.length > 0) {
+                    await Statement.update(
+                        { groupId: newId },
+                        {
+                            where: { groupId: oldId },
+                            transaction: t
+                        }
+                    );
+                }
+            }
+
+            // Обновляем остальные данные группы (кроме ID, если он изменялся)
+            await Group.update(
+                {
+                    specialtyId: updateData.specialtyId,
+                    admissionYear: updateData.admissionYear,
+                    educationForm: updateData.educationForm,
+                    educationLevel: updateData.educationLevel
+                },
+                {
+                    where: { id: newId || oldId },
+                    transaction: t
+                }
+            );
+        });
+
+        // Получаем обновленные данные группы
+        const updatedGroup = await Group.findByPk(newId || oldId, {
+            include: [{
+                model: Specialty,
+                as: 'specialty',
+                include: [{
+                    model: Faculty,
+                    as: 'faculty'
+                }]
+            }]
         });
 
         res.json({ 
             message: "Данные группы успешно обновлены",
             group: {
-                id: group.id,
-                specialtyId: group.specialtyId,
-                admissionYear: group.admissionYear,
-                educationForm: group.educationForm,
-                educationLevel: group.educationLevel
+                id: updatedGroup.id,
+                specialtyId: updatedGroup.specialtyId,
+                specialtyName: updatedGroup.specialty?.name,
+                facultyName: updatedGroup.faculty?.name,
+                admissionYear: updatedGroup.admissionYear,
+                educationForm: updatedGroup.educationForm,
+                educationLevel: updatedGroup.educationLevel
             }
         });
 

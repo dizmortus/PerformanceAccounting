@@ -15,6 +15,7 @@ const EditGroupModal = ({ group, onClose }) => {
         educationLevel: 1,
     });
     
+    const [originalId, setOriginalId] = useState("");
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [isWarningOpen, setIsWarningOpen] = useState(false);
     const [warningText, setWarningText] = useState("");
@@ -91,6 +92,7 @@ const EditGroupModal = ({ group, onClose }) => {
                 educationForm: group.educationForm,
                 educationLevel: group.educationLevel,
             });
+            setOriginalId(group.id);
         }
     }, [group]);
 
@@ -110,6 +112,13 @@ const EditGroupModal = ({ group, onClose }) => {
         if (field === "admissionYear") {
             const currentYear = new Date().getFullYear();
             if (value < 2000 || value > currentYear) {
+                return;
+            }
+        }
+
+        if (field === "id") {
+            // Разрешаем ввод только цифр
+            if (!/^\d*$/.test(value)) {
                 return;
             }
         }
@@ -137,7 +146,15 @@ const EditGroupModal = ({ group, onClose }) => {
     const handleSave = async () => {
         const errors = {};
         const selectedSpecialty = specialties.find(s => s.id === localGroup.specialtyId);
-        const yearSuffix = String(localGroup.admissionYear).slice(-2);
+        
+        // Проверка ID группы
+        if (!localGroup.id) {
+            errors.id = "ID группы не может быть пустым";
+        } else if (localGroup.id.length > 10) {
+            errors.id = "ID группы не должен превышать 10 цифр";
+        } else if (!/^\d+$/.test(localGroup.id)) {
+            errors.id = "ID группы должен содержать только цифры";
+        }
         
         // Проверка специальности
         if (!localGroup.specialtyId) {
@@ -156,9 +173,15 @@ const EditGroupModal = ({ group, onClose }) => {
             return;
         }
 
+        // Подготавливаем данные для отправки
+        const groupData = {
+            ...localGroup,
+            ...(localGroup.id !== originalId && { newId: localGroup.id })
+        };
+
         updateGroupMutation.mutate({ 
-            id: localGroup.id, 
-            groupData: localGroup 
+            id: originalId,
+            groupData: groupData 
         });
     };
 
@@ -171,30 +194,38 @@ const EditGroupModal = ({ group, onClose }) => {
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg relative">
-    <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Редактирование группы</h2>
-        <button
-            className="text-gray-500 hover:text-gray-700 transition"
-            onClick={() => onClose(false)}
-            title="Закрыть"
-        >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
-    </div>
+                <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg relative">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-semibold">Редактирование группы</h2>
+                        <button
+                            className="text-gray-500 hover:text-gray-700 transition"
+                            onClick={() => onClose(false)}
+                            title="Закрыть"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">ID группы</label>
+                            <label className="block text-sm font-medium text-gray-700">ID группы (только цифры)</label>
                             <input
                                 type="text"
                                 value={localGroup.id}
-                                className="w-full px-2 py-1 border rounded-lg"
-                                disabled
+                                onChange={(e) => handleChange(e, "id")}
+                                className={`w-full px-2 py-1 border rounded-lg ${
+                                    validationErrors.id ? "border-red-500" : ""
+                                }`}
+                                placeholder="Введите ID группы"
+                                maxLength={10}
+                                inputMode="numeric"
                             />
+                            {validationErrors.id && (
+                                <p className="text-red-500 text-sm mt-1">{validationErrors.id}</p>
+                            )}
                         </div>
-    
+
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Специальность</label>
                             <SearchableSelect
@@ -211,7 +242,7 @@ const EditGroupModal = ({ group, onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.specialtyId}</p>
                             )}
                         </div>
-    
+
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Год поступления</label>
                             <input
@@ -229,7 +260,7 @@ const EditGroupModal = ({ group, onClose }) => {
                                 <p className="text-red-500 text-sm mt-1">{validationErrors.admissionYear}</p>
                             )}
                         </div>
-    
+
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Форма обучения</label>
                             <SearchableSelect
@@ -246,7 +277,7 @@ const EditGroupModal = ({ group, onClose }) => {
                                 getOptionKey={(option) => option.value}
                             />
                         </div>
-    
+
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Ступень обучения</label>
                             <SearchableSelect
@@ -263,35 +294,31 @@ const EditGroupModal = ({ group, onClose }) => {
                             />
                         </div>
                     </div>
-    
+
                     <div className="flex justify-between mt-6">
-                        {/* Кнопка сохранения */}
                         <button
-                           className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
                             onClick={handleSave}
                             disabled={updateGroupMutation.isPending}
                             title="Сохранить изменения"
                         >
                             {updateGroupMutation.isPending ? (
-    <>
-
-    <span>Сохранение...</span>
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" viewBox="0 0 20 20" fill="currentColor">
-      <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-    </svg>
-  </>
+                                <>
+                                    <span>Сохранение...</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                                    </svg>
+                                </>
                             ) : (
                                 <>
-
-                                <span>Сохранить</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                              </>
+                                    <span>Сохранить</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                </>
                             )}
                         </button>
-    
-                        {/* Кнопка удаления */}
+
                         <button
                             className="h-[40px] w-[40px] p-2 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 transition flex items-center justify-center"
                             onClick={() => setIsConfirmOpen(true)}
@@ -311,7 +338,7 @@ const EditGroupModal = ({ group, onClose }) => {
                     </div>
                 </div>
             </div>
-    
+
             <ConfirmModal
                 isOpen={isConfirmOpen}
                 onClose={() => setIsConfirmOpen(false)}
