@@ -74,39 +74,84 @@ export const fetchPossibleGrades = async () => {
     const response = await fetch("/api/grades/possible-values");
     return response.ok ? response.json() : [];
 };
-
 export const submitGrades = async ({ statementId, lessonId, grades }) => {
     try {
-      const requests = Object.entries(grades)
+      // Подготавливаем данные для отправки
+      const gradesToSend = Object.entries(grades)
         .filter(([_, value]) => value !== undefined && value !== null && value !== '')
-        .map(async ([studentId, value]) => {
-          const body = {
-            studentId,
-            value,
-            ...(statementId ? { statementId } : { lessonId })
-          };
+        .map(([studentId, value]) => ({
+          studentId,
+          value,
+          ...(statementId ? { statementId } : { lessonId })
+        }));
   
-          const response = await fetchWithAuth('/api/grades/set', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-          });
+      // Если нет оценок для отправки
+      if (gradesToSend.length === 0) {
+        return { 
+          success: false, 
+          error: "Нет оценок для отправки" 
+        };
+      }
   
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || `Ошибка для студента ${studentId}`);
-          }
-          return { studentId, success: true };
-        });
+      // Отправляем все оценки одним запросом
+      const response = await fetchWithAuth('/api/grades/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grades: gradesToSend })
+      });
   
-      const results = await Promise.all(requests);
-      return { success: true, results };
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Ошибка при отправке оценок");
+      }
+  
+      const responseData = await response.json();
+  
+      // Форматируем результаты для удобства
+      const results = responseData.results.map(result => ({
+        studentId: result.studentId,
+        success: true,
+        status: result.status,
+        value: result.value
+      }));
+  
+      // Проверяем, есть ли неудачные операции
+      const failedOperations = results.filter(r => !r.success);
+      if (failedOperations.length > 0) {
+        return {
+          success: false,
+          partialSuccess: true,
+          results,
+          failedStudents: failedOperations.map(op => op.studentId),
+          error: "Некоторые оценки не были сохранены"
+        };
+      }
+  
+      return { 
+        success: true, 
+        results,
+        message: responseData.message || "Все оценки успешно сохранены"
+      };
+  
     } catch (error) {
       console.error('Ошибка при отправке оценок:', error);
+      
+      // Пытаемся извлечь информацию о неудачных операциях из ошибки
+      let failedStudents = [];
+      if (error.message.includes('missingStudentIds')) {
+        try {
+          const errorObj = JSON.parse(error.message.split(' - ')[1]);
+          failedStudents = errorObj.missingStudentIds || [];
+        } catch (e) {
+          console.error('Ошибка при парсинге информации об ошибке:', e);
+        }
+      }
+  
       return { 
         success: false, 
-        error: error.message,
-        failedStudents: error.message.includes('студента') ? [error.message.split(' ').pop()] : []
+        error: error.message.split(' - ')[0], // Базовое сообщение об ошибке
+        failedStudents,
+        details: error.details || undefined
       };
     }
   };

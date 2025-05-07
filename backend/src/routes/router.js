@@ -77,7 +77,7 @@ import {
 } from "../controllers/studentController.js";
 
 import { 
-    setGrade, 
+    setGrades, 
     getPossibleGrades, 
     getGrades, 
     deleteGrade  
@@ -251,7 +251,7 @@ router.get("/specialties/:id", verifyToken, getSpecialtyById);
 router.get("/faculties/:id", verifyToken, getFacultyById);
 
 // Оценки
-router.post("/grades/set", verifyToken, setGrade);
+router.post("/grades/set", verifyToken, setGrades);
 router.get("/grades", verifyToken, getGrades);
 router.get("/grades/possible-values", getPossibleGrades);
 router.delete("/grades", verifyToken, deleteGrade);
