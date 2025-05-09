@@ -8,6 +8,7 @@ import { dirname } from "path";
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import validator from 'validator';
+
 // Получаем текущую директорию файла
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -35,12 +36,19 @@ export const generateStatementDocument = async (statementId) => {
 
         console.log(`[${new Date().toISOString()}] Полученные данные statement:`, JSON.stringify(statement, null, 2));
 
-        // Получаем специальность и факультет
+        // Получаем специальность и факультет с деканом
         const specialty = await Specialty.findByPk(statement.group.specialty.id);
         if (!specialty) throw new Error(`Специальность с ID ${statement.group.specialty.id} не найдена`);
 
-        const faculty = await Faculty.findByPk(specialty.facultyId);
+        const faculty = await Faculty.findByPk(specialty.facultyId, {
+            include: [{
+                model: User,
+                as: "dean",
+                attributes: ["lastName", "firstName", "patronymic"]
+            }]
+        });
         if (!faculty) throw new Error(`Факультет с ID ${specialty.facultyId} не найден`);
+        if (!faculty.dean) throw new Error(`Декан не назначен для факультета ${faculty.name}`);
 
         console.log(`[${new Date().toISOString()}] Найден факультет: ${faculty.name}`);
 
@@ -146,9 +154,8 @@ export const generateStatementDocument = async (statementId) => {
             grade3: isCredit ? "—" : grades.filter(g => g.value === "3").length,
             grade2: isCredit ? "—" : grades.filter(g => g.value === "2").length,
             grade1: isCredit ? "—" : grades.filter(g => g.value === "1").length,
-            deanName: `${faculty.deanFirstName[0]}.` + 
-                      (faculty.deanPatronymic ? `${faculty.deanPatronymic[0]}. ` : " ") + 
-                      `${faculty.deanLastName}`
+            deanName: `${faculty.dean.lastName} ${faculty.dean.firstName[0]}.` + 
+                      (faculty.dean.patronymic ? `${faculty.dean.patronymic[0]}.` : "")
         };
 
         console.log(`[${new Date().toISOString()}] Данные для генерации документа сформированы`);
@@ -185,9 +192,6 @@ export const generateStatementDocument = async (statementId) => {
         throw new Error("Ошибка генерации ведомости");
     }
 };
-
-
-
 
 
 
@@ -467,7 +471,7 @@ export const sendStatementByEmail = async (req, res) => {
             }]
         });
 
-        await statement.update({ date: new Date() });
+        // await statement.update({ date: new Date() });
         decryptedPassword = null;
 
         res.json({

@@ -12,20 +12,16 @@ export default (sequelize, DataTypes) => {
       allowNull: false,
       field: 'Название'
     },
-    deanLastName: {
+    deanLogin: {
       type: DataTypes.STRING,
       allowNull: false,
-      field: 'Фамилия декана'
-    },
-    deanFirstName: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      field: 'Имя декана'
-    },
-    deanPatronymic: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      field: 'Отчество декана'
+      field: 'Декан',
+      references: {
+        model: {
+          tableName: 'Пользователи'
+        },
+        key: 'Логин'
+      }
     }
   }, {
     tableName: 'Факультеты',

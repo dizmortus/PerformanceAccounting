@@ -1,3 +1,4 @@
+// src/models/index.js
 import { Sequelize, DataTypes } from "sequelize";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
@@ -44,6 +45,19 @@ Specialty.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
 // Ассоциации факультетов
 Discipline.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
 User.belongsTo(Faculty, { foreignKey: "facultyId", as: "faculty" });
+
+// Связь декана (пользователя) с факультетом
+Faculty.belongsTo(User, { 
+  foreignKey: "deanLogin", 
+  as: "dean",
+  targetKey: "login"
+});
+
+User.hasOne(Faculty, {
+  foreignKey: "deanLogin",
+  as: "deanFaculty",
+  sourceKey: "login"
+});
 
 // Обратные связи факультетов
 Faculty.hasMany(Discipline, { foreignKey: "facultyId", as: "disciplines" });
@@ -100,18 +114,18 @@ Lesson.hasMany(Grade, {
 // Обратные связи
 Discipline.hasMany(Statement, { 
   foreignKey: "disciplineId", 
-  as: "disciplineStatements" // Измененный псевдоним
+  as: "disciplineStatements"
 });
 
 Group.hasMany(Statement, { 
   foreignKey: "groupId", 
-  as: "groupStatements" // Измененный псевдоним
+  as: "groupStatements"
 });
 
-// Ассоциации пользователей (перенесены в одно место)
+// Ассоциации пользователей
 User.hasMany(Statement, { 
   foreignKey: "teacherLogin", 
-  as: "teacherStatements" // Измененный псевдоним
+  as: "teacherStatements"
 });
 
 User.hasMany(Statement, { 

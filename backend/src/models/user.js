@@ -1,3 +1,4 @@
+// src/models/user.js
 export default (sequelize, DataTypes) => {
   const User = sequelize.define('User', {
     login: {

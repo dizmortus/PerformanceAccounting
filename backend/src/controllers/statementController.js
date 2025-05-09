@@ -277,8 +277,6 @@ export const createStatement = async (req, res) => {
         res.status(500).json({ error: "Ошибка сервера" });
     }
 };
-
-
 /**
  * Изменение ведомости
  */
@@ -298,39 +296,153 @@ export const updateStatement = async (req, res) => {
             list 
         } = req.body;
 
+        // Логирование входящих данных
+        console.log('Получен запрос на обновление ведомости:', {
+            id,
+            body: {
+                teacherLogin,
+                classTeacherLogin,
+                disciplineId,
+                groupId,
+                practiceHours,
+                semester,
+                assessmentType,
+                creditUnits,
+                date: date !== undefined ? (date === null ? 'null' : `"${date}" (тип: ${typeof date})`) : 'undefined',
+                list: list !== undefined ? `"${list}" (тип: ${typeof list}, длина: ${list?.length})` : 'undefined'
+            }
+        });
+
         const statement = await Statement.findByPk(id);
         if (!statement) {
+            console.log(`Ведомость с ID ${id} не найдена`);
             return res.status(404).json({ error: "Ведомость не найдена" });
         }
 
+        // Логирование текущего состояния ведомости
+        console.log('Текущее состояние ведомости:', {
+            id: statement.id,
+            date: statement.date,
+            teacherLogin: statement.teacherLogin,
+            classTeacherLogin: statement.classTeacherLogin,
+            disciplineId: statement.disciplineId,
+            groupId: statement.groupId,
+            practiceHours: statement.practiceHours,
+            semester: statement.semester,
+            assessmentType: statement.assessmentType,
+            creditUnits: statement.creditUnits,
+            list: statement.list ? `[данные длиной ${statement.list.length}]` : null
+        });
+
         // Проверка зачетных единиц
         if (creditUnits !== undefined && creditUnits < 0) {
+            console.log('Ошибка: отрицательные зачетные единицы:', creditUnits);
             return res.status(400).json({ error: "Количество зачетных единиц не может быть отрицательным" });
         }
 
-        // Обновление данных
-        statement.teacherLogin = teacherLogin !== undefined ? teacherLogin : statement.teacherLogin;
-        statement.classTeacherLogin = classTeacherLogin !== undefined ? classTeacherLogin : statement.classTeacherLogin;
-        statement.disciplineId = disciplineId !== undefined ? disciplineId : statement.disciplineId;
-        statement.groupId = groupId !== undefined ? groupId : statement.groupId;
-        statement.practiceHours = practiceHours !== undefined ? practiceHours : statement.practiceHours;
-        statement.semester = semester !== undefined ? semester : statement.semester;
-        statement.assessmentType = assessmentType !== undefined ? assessmentType : statement.assessmentType;
-        statement.creditUnits = creditUnits !== undefined ? creditUnits : statement.creditUnits;
-        statement.date = date !== undefined ? new Date(date) : statement.date;
+        // Обновление данных с логированием изменений
+        const changes = {};
+        
+        if (teacherLogin !== undefined && teacherLogin !== statement.teacherLogin) {
+            changes.teacherLogin = { from: statement.teacherLogin, to: teacherLogin };
+            statement.teacherLogin = teacherLogin;
+        }
+        
+        if (classTeacherLogin !== undefined && classTeacherLogin !== statement.classTeacherLogin) {
+            changes.classTeacherLogin = { from: statement.classTeacherLogin, to: classTeacherLogin };
+            statement.classTeacherLogin = classTeacherLogin;
+        }
+        
+        if (disciplineId !== undefined && disciplineId !== statement.disciplineId) {
+            changes.disciplineId = { from: statement.disciplineId, to: disciplineId };
+            statement.disciplineId = disciplineId;
+        }
+        
+        if (groupId !== undefined && groupId !== statement.groupId) {
+            changes.groupId = { from: statement.groupId, to: groupId };
+            statement.groupId = groupId;
+        }
+        
+        if (practiceHours !== undefined && practiceHours !== statement.practiceHours) {
+            changes.practiceHours = { from: statement.practiceHours, to: practiceHours };
+            statement.practiceHours = practiceHours;
+        }
+        
+        if (semester !== undefined && semester !== statement.semester) {
+            changes.semester = { from: statement.semester, to: semester };
+            statement.semester = semester;
+        }
+        
+        if (assessmentType !== undefined && assessmentType !== statement.assessmentType) {
+            changes.assessmentType = { from: statement.assessmentType, to: assessmentType };
+            statement.assessmentType = assessmentType;
+        }
+        
+        if (creditUnits !== undefined && creditUnits !== statement.creditUnits) {
+            changes.creditUnits = { from: statement.creditUnits, to: creditUnits };
+            statement.creditUnits = creditUnits;
+        }
+        
+        if (date !== undefined) {
+            const newDate = date === null ? null : (date ? new Date(date) : statement.date);
+            changes.date = { 
+                from: statement.date, 
+                to: newDate,
+                inputValue: date,
+                inputType: typeof date,
+                action: date === null ? 'explicit null' : (date ? 'new date' : 'keep current')
+            };
+            statement.date = newDate;
+        }
+        
         if (list !== undefined) {
-            statement.list = list === "[]" ? null : list;
+            const newList = list === "[]" ? null : list;
+            changes.list = {
+                from: statement.list ? `[данные длиной ${statement.list.length}]` : null,
+                to: newList ? `[данные длиной ${newList.length}]` : null,
+                inputValue: list,
+                inputType: typeof list
+            };
+            statement.list = newList;
+        }
+
+        // Логирование изменений
+        if (Object.keys(changes).length > 0) {
+            console.log('Применяемые изменения:', changes);
+        } else {
+            console.log('Изменений не обнаружено');
         }
 
         await statement.save();
 
+        // Логирование результата
+        console.log('Ведомость успешно обновлена. Новое состояние:', {
+            id: statement.id,
+            date: statement.date,
+            teacherLogin: statement.teacherLogin,
+            classTeacherLogin: statement.classTeacherLogin,
+            disciplineId: statement.disciplineId,
+            groupId: statement.groupId,
+            practiceHours: statement.practiceHours,
+            semester: statement.semester,
+            assessmentType: statement.assessmentType,
+            creditUnits: statement.creditUnits,
+            list: statement.list ? `[данные длиной ${statement.list.length}]` : null
+        });
+
         res.json(statement);
     } catch (error) {
-        console.error("Ошибка при изменении ведомости:", error);
+        console.error("Ошибка при изменении ведомости:", {
+            error: error.message,
+            stack: error.stack,
+            request: {
+                id: req.params.id,
+                body: req.body
+            }
+        });
         res.status(500).json({ error: "Ошибка сервера" });
     }
 };
-
 /**
  * Удаление ведомости
  */
