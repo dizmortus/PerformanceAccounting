@@ -5,7 +5,7 @@ import { fetchAllStudents, fetchAllGroups } from "../../../utils/api";
 import EditStudentModal from "./EditStudentModal";
 import CreateStudentModal from "./CreateStudentModal";
 import SearchableSelect from '../SearchableSelect';
-
+import ContentModal from '../ContentModal';
 const StudentTable = ({ onCancel }) => {
     const [editingStudent, setEditingStudent] = useState(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -439,23 +439,13 @@ const StudentTable = ({ onCancel }) => {
         </div>
       </div>
 
-      {/* Модальное окно просмотра содержимого ячейки */}
-      {cellContentModal.isOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-md w-full">
-            <h2 className="text-xl font-semibold mb-4">{cellContentModal.title}</h2>
-            <div className="text-gray-700 mb-4 p-4 bg-gray-100 rounded break-words">
-              {cellContentModal.content}
-            </div>
-            <button
-              onClick={() => setCellContentModal({ ...cellContentModal, isOpen: false })}
-              className="w-36 px-6 py-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition"
-            >
-              ОК
-            </button>
-          </div>
-        </div>
-      )}
+                 <ContentModal
+  isOpen={cellContentModal.isOpen}
+  onClose={() => setCellContentModal({...cellContentModal, isOpen: false})}
+  title={cellContentModal.title}
+  content={cellContentModal.content}
+  onCopy={() => navigator.clipboard.writeText(cellContentModal.content)}
+/>
 
       {editingStudent && <EditStudentModal student={editingStudent} onClose={handleCloseModal} />}
       {isCreateModalOpen && <CreateStudentModal onClose={handleCloseCreateModal} />}

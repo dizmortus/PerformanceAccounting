@@ -1,8 +1,7 @@
 import { User } from "../models/index.js";
 import bcrypt from 'bcryptjs';
 import sequelize from '../config/db.js'; 
-import { Faculty, Statement, Lesson } from "../models/index.js"; // путь скорректируйте под ваш проект
-
+import { Faculty, Statement, Lesson } from "../models/index.js";
 export const getAllUsers = async (req, res) => {
     try {
         console.log('--- START getAllUsers ---');
@@ -14,31 +13,100 @@ export const getAllUsers = async (req, res) => {
 
         let whereCondition = {};
 
-        if (req.user.facultyId) {
-            console.log('Applying faculty filter. FacultyID:', req.user.facultyId);
-            whereCondition.facultyId = req.user.facultyId;
+        // Фильтр по факультету (может быть передан в параметрах запроса или взят из текущего пользователя)
+        const facultyId = req.query.facultyId || 
+                         (req.query.sameFacultyOnly === 'true' ? req.user.facultyId : null);
+        
+        if (facultyId) {
+            console.log('Applying faculty filter. FacultyID:', facultyId);
+            whereCondition.facultyId = facultyId;
         }
 
         console.log('Final whereCondition:', whereCondition);
 
+        // Получаем всех пользователей с информацией о факультетах
         const users = await User.findAll({
             where: whereCondition,
-            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId']
+            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId'],
+            include: [{
+                model: Faculty,
+                as: 'faculty',
+                attributes: ['id', 'name', 'abbreviation', 'deanLogin'],
+                required: false
+            }],
+            order: [['lastName', 'ASC'], ['firstName', 'ASC']]
         });
 
-        console.log('Found users:', users.map(u => ({
-            login: u.login,
-            facultyId: u.facultyId
-        })));
+        // Формируем ответ
+        const response = users.map(user => ({
+            login: user.login,
+            email: user.email,
+            lastName: user.lastName,
+            firstName: user.firstName,
+            patronymic: user.patronymic,
+            role: user.role,
+            status: user.status,
+            facultyId: user.facultyId,
+            facultyName: user.faculty?.name || null,
+            facultyAbbreviation: user.faculty?.abbreviation || null,
+            isDean: user.faculty?.deanLogin === user.login
+        }));
+
+        console.log('Found users:', response.length);
         console.log('--- END getAllUsers ---');
 
-        res.json(users);
+        res.json(response);
     } catch (error) {
         console.error("Error fetching users:", error);
         res.status(500).json({ error: "Server error", details: error.message });
     }
 };
 
+export const getAllTeachers = async (req, res) => {
+    console.log("Запрос на получение всех преподавателей начат.");
+    try {
+        let whereCondition = { role: "Преподаватель" };
+
+        // Фильтр по факультету
+        const facultyId = req.query.facultyId || 
+                         (req.query.sameFacultyOnly === 'true' ? req.user.facultyId : null);
+        
+        if (facultyId) {
+            console.log("Применяется фильтр по факультету:", facultyId);
+            whereCondition.facultyId = facultyId;
+        }
+
+        const teachers = await User.findAll({
+            where: whereCondition,
+            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId'],
+            include: [{
+                model: Faculty,
+                as: 'faculty',
+                attributes: ['id', 'name', 'abbreviation'],
+                required: false
+            }],
+            order: [['lastName', 'ASC'], ['firstName', 'ASC']]
+        });
+
+        if (!teachers || teachers.length === 0) {
+            console.log("Преподаватели не найдены.");
+            return res.status(404).json({ error: "Преподаватели не найдены" });
+        }
+
+        // Форматируем ответ
+        const response = teachers.map(teacher => ({
+            ...teacher.get({ plain: true }),
+            facultyName: teacher.faculty?.name || null,
+            facultyAbbreviation: teacher.faculty?.abbreviation || null
+        }));
+
+        console.log("Найдено преподавателей:", response.length);
+        res.json(response);
+    } catch (error) {
+        console.error("Ошибка при получении преподавателей:", error);
+        res.status(500).json({ error: "Ошибка сервера", details: error.message });
+    }
+};
 
 export const getUserByLogin = async (req, res) => {
     const { login } = req.params;
@@ -117,15 +185,74 @@ export const deleteUser = async (req, res) => {
         console.error("Ошибка при удалении пользователя:", error);
         res.status(500).json({ error: "Ошибка сервера", details: error.message });
     }
+};export const createUser = async (req, res) => {
+    const { login, email, password, lastName, firstName, patronymic, role, status, isDean } = req.body;
+
+    console.log("Данные запроса:", req.body);
+
+    try {
+        // Проверяем уникальность логина
+        const existingUser = await User.findOne({ where: { login } });
+        if (existingUser) {
+            return res.status(400).json({ error: "Пользователь с таким логином уже существует" });
+        }
+
+        // Валидация пароля
+        if (!password || typeof password !== "string") {
+            return res.status(400).json({ error: "Пароль обязателен и должен быть строкой" });
+        }
+
+        // Хешируем пароль
+        const saltRounds = 10;
+        const passwordHash = await bcrypt.hash(password, saltRounds);
+
+        // Создаем пользователя в транзакции
+        const result = await sequelize.transaction(async (t) => {
+            const newUser = await User.create({
+                login,
+                email,
+                passwordHash,
+                lastName,
+                firstName,
+                patronymic,
+                role: role || "Преподаватель",
+                status: status || "Активный",
+                facultyId: req.user.facultyId || null
+            }, { transaction: t });
+
+            // Если пользователь - декан и у него указан факультет
+            if (isDean && newUser.facultyId) {
+                const faculty = await Faculty.findOne({ 
+                    where: { id: newUser.facultyId },
+                    transaction: t 
+                });
+                
+                if (!faculty) {
+                    throw new Error('Указанный факультет не существует');
+                }
+
+                // Обновляем факультет, устанавливая декана
+                await faculty.update({ deanLogin: newUser.login }, { transaction: t });
+            }
+
+            return newUser;
+        });
+
+        res.status(201).json({ message: "Пользователь создан", user: result });
+    } catch (error) {
+        console.error("Ошибка при создании пользователя:", error);
+        res.status(500).json({ error: "Ошибка сервера", details: error.message });
+    }
 };
+
 export const updateUser = async (req, res) => {
     const { login: oldLogin } = req.params;
-    const newData = req.body;
+    const { isDean, ...newData } = req.body;
 
     try {
         // Начинаем транзакцию
         const result = await sequelize.transaction(async (t) => {
-            // 1. Находим пользователя по старому логину
+            // 1. Находим пользователя
             const user = await User.findOne({
                 where: { login: oldLogin },
                 transaction: t
@@ -135,14 +262,10 @@ export const updateUser = async (req, res) => {
                 throw new Error('Пользователь не найден');
             }
 
-            // 2. Удаляем служебные поля из данных для обновления
-            const updateData = { ...newData };
-            delete updateData.oldLogin;
-
-            // 3. Проверяем уникальность нового логина, если он изменяется
-            if (updateData.login && updateData.login !== oldLogin) {
+            // 2. Проверяем уникальность нового логина
+            if (newData.login && newData.login !== oldLogin) {
                 const existingUser = await User.findOne({
-                    where: { login: updateData.login },
+                    where: { login: newData.login },
                     transaction: t
                 });
                 
@@ -151,10 +274,10 @@ export const updateUser = async (req, res) => {
                 }
             }
 
-            // 4. Проверяем уникальность email, если он изменяется
-            if (updateData.email && updateData.email !== user.email) {
+            // 3. Проверяем уникальность email
+            if (newData.email && newData.email !== user.email) {
                 const existingEmail = await User.findOne({
-                    where: { email: updateData.email },
+                    where: { email: newData.email },
                     transaction: t
                 });
                 
@@ -163,26 +286,53 @@ export const updateUser = async (req, res) => {
                 }
             }
 
-            // 5. Если логин не меняется, просто обновляем данные
-            if (!updateData.login || updateData.login === oldLogin) {
-                await user.update(updateData, { transaction: t });
+            // 4. Если пользователь становится деканом
+            if (isDean && user.facultyId) {
+                const faculty = await Faculty.findOne({ 
+                    where: { id: user.facultyId },
+                    transaction: t 
+                });
+                
+                if (!faculty) {
+                    throw new Error('Указанный факультет не существует');
+                }
+
+                // Обновляем факультет, устанавливая декана
+                await faculty.update({ deanLogin: newData.login || oldLogin }, { transaction: t });
+            }
+
+            // 5. Если пользователь перестает быть деканом (необязательно, зависит от логики)
+            if (isDean === false && user.facultyId) {
+                const faculty = await Faculty.findOne({ 
+                    where: { deanLogin: oldLogin },
+                    transaction: t 
+                });
+                
+                if (faculty) {
+                    await faculty.update({ deanLogin: null }, { transaction: t });
+                }
+            }
+
+            // 6. Обновляем данные пользователя
+            if (!newData.login || newData.login === oldLogin) {
+                await user.update(newData, { transaction: t });
                 return { success: true };
             }
 
-            // 6. Если логин меняется - сначала обновляем остальные поля
-            const fieldsToUpdate = { ...updateData };
+            // 7. Если меняется логин - сначала обновляем остальные поля
+            const fieldsToUpdate = { ...newData };
             delete fieldsToUpdate.login;
 
             if (Object.keys(fieldsToUpdate).length > 0) {
                 await user.update(fieldsToUpdate, { transaction: t });
             }
 
-            // 7. Затем обновляем логин с помощью прямого SQL-запроса
+            // 8. Затем обновляем логин
             await sequelize.query(
                 'UPDATE "Пользователи" SET "Логин" = :newLogin WHERE "Логин" = :oldLogin', 
                 {
                     replacements: { 
-                        newLogin: updateData.login, 
+                        newLogin: newData.login, 
                         oldLogin: oldLogin 
                     },
                     transaction: t
@@ -201,71 +351,7 @@ export const updateUser = async (req, res) => {
         });
     }
 };
-export const createUser = async (req, res) => {
-    const { login, email, password, lastName, firstName, patronymic, role, status } = req.body;
 
-    console.log("Данные запроса:", req.body);
-
-    try {
-        const existingUser = await User.findOne({ where: { login } });
-        if (existingUser) {
-            return res.status(400).json({ error: "Пользователь с таким логином уже существует" });
-        }
-
-        if (!password || typeof password !== "string") {
-            return res.status(400).json({ error: "Пароль обязателен и должен быть строкой" });
-        }
-
-        const saltRounds = 10;
-        const passwordHash = await bcrypt.hash(password, saltRounds);
-
-        const newUser = await User.create({
-            login,
-            email,
-            passwordHash,
-            lastName,
-            firstName,
-            patronymic,
-            role: role || "Преподаватель",
-            status: status || "Активный",
-            facultyId: req.user.facultyId || null // Устанавливаем факультет текущего пользователя
-        });
-
-        res.status(201).json({ message: "Пользователь создан", user: newUser });
-    } catch (error) {
-        console.error("Ошибка при создании пользователя:", error);
-        res.status(500).json({ error: "Ошибка сервера", details: error.message });
-    }
-};
-
-
-export const getAllTeachers = async (req, res) => {
-    console.log("Запрос на получение всех преподавателей начат.");
-    try {
-        let whereCondition = { role: "Преподаватель" };
-
-        if (req.user.facultyId) {
-            console.log("Применяется фильтр по факультету:", req.user.facultyId);
-            whereCondition.facultyId = req.user.facultyId;
-        }
-
-        const teachers = await User.findAll({
-            where: whereCondition,
-            attributes: ['login', 'email', 'lastName', 'firstName', 'patronymic', 'role', 'status', 'facultyId']
-        });
-
-        if (!teachers || teachers.length === 0) {
-            console.log("Преподаватели не найдены.");
-            return res.status(404).json({ error: "Преподаватели не найдены" });
-        }
-
-        console.log("Запрос на получение всех преподавателей успешно завершен.");
-        res.json(teachers);
-    } catch (error) {
-        console.error("Ошибка при получении преподавателей:", error);
-        res.status(500).json({ error: "Ошибка сервера", details: error.message });
-    }
-};
 
 
 export const changeUserPassword = async (req, res) => {

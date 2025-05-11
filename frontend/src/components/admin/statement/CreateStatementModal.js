@@ -1,16 +1,49 @@
 'use client';
-import { useState, useEffect  } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { createStatement, fetchAllTeachers, fetchAllDisciplines, fetchAllGroups } from "../../../utils/api";
+import { 
+    createStatement, 
+    fetchAllTeachers, 
+    fetchAllDisciplines, 
+    fetchAllGroups,
+    fetchAllFaculties,
+    fetchStatementByGroupDisciplineSemester 
+} from "../../../utils/api";
 import ConfirmModal from '../../ConfirmModal';
 import WarningModal from '../../WarningModal';
 import SearchableSelect from '../SearchableSelect';
-import { fetchStatementByGroupDisciplineSemester } from "../../../utils/api";
 
-const CreateStatementModal = ({ onClose }) => {
+const CreateStatementModal = ({ onClose, currentUser }) => {
+    // Сначала объявляем все хуки
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [isWarningOpen, setIsWarningOpen] = useState(false);
+    const [warningText, setWarningText] = useState("");
+    const [validationErrors, setValidationErrors] = useState({});
+
+    // Получаем данные о факультетах
+    const { data: facultiesResponse = { faculties: [], currentUserFaculty: null } } = useQuery({
+        queryKey: ['faculties'],
+        queryFn: fetchAllFaculties,
+        staleTime: 60 * 1000,
+    });
+
+    // Подготавливаем данные для Select
+    const facultyOptions = facultiesResponse.faculties?.map(f => ({
+        id: f.id,
+        label: f.abbreviation,
+        fullName: f.name,
+        ...f
+    })) || [];
+
+    // Определяем факультет по умолчанию
+    const defaultFacultyId = facultiesResponse.currentUserFaculty?.id || currentUser?.facultyId;
+
+    // Теперь инициализируем состояние, используя defaultFacultyId
     const [localStatement, setLocalStatement] = useState({
         teacherLogin: "",
+        teacherFacultyId: defaultFacultyId || null,
         classTeacherLogin: "",
+        classTeacherFacultyId: defaultFacultyId || null,
         groupId: "",
         semester: "",
         disciplineId: "",
@@ -19,11 +52,6 @@ const CreateStatementModal = ({ onClose }) => {
         date: "",
         assessmentType: "зачет"
     });
-    
-    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-    const [isWarningOpen, setIsWarningOpen] = useState(false);
-    const [warningText, setWarningText] = useState("");
-    const [validationErrors, setValidationErrors] = useState({});
 
     // Опции для типов аттестации с заглавными буквами
     const assessmentTypeOptions = [
@@ -34,12 +62,38 @@ const CreateStatementModal = ({ onClose }) => {
         "Дифференцированный зачет"
     ];
 
-    // Fetch data using React Query
-    const { data: teachers = [] } = useQuery({
-        queryKey: ['teachers'],
-        queryFn: fetchAllTeachers,
-        staleTime: 60 * 1000
-    });
+
+
+const { data: teachers = [], refetch: refetchTeachers } = useQuery({
+    queryKey: ['teachers', localStatement.teacherFacultyId || defaultFacultyId],
+    queryFn: () => fetchAllTeachers({ 
+        facultyId: localStatement.teacherFacultyId || defaultFacultyId 
+    }),
+    staleTime: 60 * 1000,
+    enabled: !!(localStatement.teacherFacultyId || defaultFacultyId)
+});
+
+const { data: classTeachers = [], refetch: refetchClassTeachers } = useQuery({
+    queryKey: ['classTeachers', localStatement.classTeacherFacultyId || defaultFacultyId],
+    queryFn: () => fetchAllTeachers({ 
+        facultyId: localStatement.classTeacherFacultyId || defaultFacultyId 
+    }),
+    staleTime: 60 * 1000,
+    enabled: !!(localStatement.classTeacherFacultyId || defaultFacultyId)
+});
+
+
+useEffect(() => {
+    if (defaultFacultyId && !localStatement.teacherFacultyId) {
+        setLocalStatement(prev => ({
+            ...prev,
+            teacherFacultyId: defaultFacultyId,
+            classTeacherFacultyId: defaultFacultyId
+        }));
+    }
+}, [defaultFacultyId, localStatement.teacherFacultyId]);
+
+
 
     const { data: disciplinesData = [] } = useQuery({
         queryKey: ['disciplines'],
@@ -91,6 +145,15 @@ const CreateStatementModal = ({ onClose }) => {
             ...localStatement,
             [field]: value,
         };
+                if (field === "teacherFacultyId") {
+            newState.teacherLogin = "";
+            refetchTeachers();
+        }
+
+        if (field === "classTeacherFacultyId") {
+            newState.classTeacherLogin = "";
+            refetchClassTeachers();
+        }
 
         if (field === "assessmentType") {
             const selectedDiscipline = disciplinesData.find(d => d.id === newState.disciplineId);
@@ -276,39 +339,71 @@ return (
                         )}
                     </div>
 
-                    {/* Teacher dropdown */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Преподаватель</label>
-                        <SearchableSelect
-                            options={teachers}
-                            value={localStatement.teacherLogin}
-                            onChange={(value) => setLocalStatement({ ...localStatement, teacherLogin: value })}
-                            placeholder="Выберите преподавателя"
-                            error={validationErrors.teacherLogin}
-                            formatOption={formatTeacherName}
-                            searchBy={(teacher) =>
-                                `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
-                            }
-                        />
-                    </div>
-
-                    {/* Class Teacher */}
-                    {["зачет", "экзамен", "дифференцированный зачет"].includes(localStatement.assessmentType) && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Преподаватель занятий</label>
-                            <SearchableSelect
-                                options={teachers}
-                                value={localStatement.classTeacherLogin}
-                                onChange={(value) => setLocalStatement({ ...localStatement, classTeacherLogin: value })}
-                                placeholder="Выберите преподавателя занятий"
-                                error={validationErrors.classTeacherLogin}
-                                formatOption={formatTeacherName}
-                                searchBy={(teacher) =>
-                                    `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
-                                }
-                            />
+                  {/* Блок преподавателя */}
+                        <div className="flex items-end gap-2">
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700">Преподаватель</label>
+                                <SearchableSelect
+                                    options={teachers}
+                                    value={localStatement.teacherLogin}
+                                    onChange={(value) => setLocalStatement({ ...localStatement, teacherLogin: value })}
+                                    placeholder="Выберите преподавателя"
+                                    error={validationErrors.teacherLogin}
+                                    formatOption={formatTeacherName}
+                                    searchBy={(teacher) =>
+                                        `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
+                                    }
+                                    disabled={!localStatement.teacherFacultyId}
+                                />
+                            </div>
+{/* Для преподавателя */}
+<div className="w-24">
+    <label className="block text-sm font-medium text-gray-700">Факультет</label>
+    <SearchableSelect
+        options={facultyOptions}
+        value={localStatement.teacherFacultyId || defaultFacultyId}
+        onChange={(value) => handleChange({ target: { value } }, "teacherFacultyId")}
+        placeholder="Фак."
+        formatOption={(f) => f.label}  // Показываем только аббревиатуру
+        searchBy={(f) => f.fullName.toLowerCase()} // Ищем по полному названию
+        getOptionValue={(f) => f.id}
+    />
+</div>
                         </div>
-                    )}
+
+                        {/* Блок преподавателя занятий (для некоторых типов аттестации) */}
+                        {["зачет", "экзамен", "дифференцированный зачет"].includes(localStatement.assessmentType) && (
+                            <div className="flex items-end gap-2">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium text-gray-700">Преподаватель занятий</label>
+                                    <SearchableSelect
+                                        options={classTeachers}
+                                        value={localStatement.classTeacherLogin}
+                                        onChange={(value) => setLocalStatement({ ...localStatement, classTeacherLogin: value })}
+                                        placeholder="Выберите преподавателя занятий"
+                                        error={validationErrors.classTeacherLogin}
+                                        formatOption={formatTeacherName}
+                                        searchBy={(teacher) =>
+                                            `${teacher.lastName} ${teacher.firstName} ${teacher.patronymic}`.toLowerCase()
+                                        }
+                                        disabled={!localStatement.classTeacherFacultyId}
+                                    />
+                                </div>
+{/* Для преподавателя занятий */}
+<div className="w-24">
+    <label className="block text-sm font-medium text-gray-700">Факультет</label>
+    <SearchableSelect
+        options={facultyOptions}
+        value={localStatement.classTeacherFacultyId || defaultFacultyId}
+        onChange={(value) => handleChange({ target: { value } }, "classTeacherFacultyId")}
+        placeholder="Фак."
+        formatOption={(f) => f.label}  // Показываем только аббревиатуру
+        searchBy={(f) => f.fullName.toLowerCase()} // Ищем по полному названию
+        getOptionValue={(f) => f.id}
+    />
+</div>
+                            </div>
+                        )}
 
                     {/* Date input */}
                     <div>

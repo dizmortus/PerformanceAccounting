@@ -19,13 +19,14 @@ const CreateUserModal = ({ onClose }) => {
         role: "Преподаватель",
         newPassword: "",
         isBlocked: false,
+          isDean: false // Добавлено новое поле
     });
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [isWarningOpen, setIsWarningOpen] = useState(false);
     const [warningText, setWarningText] = useState("");
     const [emailError, setEmailError] = useState("");
     const [validationErrors, setValidationErrors] = useState({});
-
+   const [localIsDean, setLocalIsDean] = useState(false); 
     // Fetch data with React Query
     const { data: roles = [] } = useQuery({
         queryKey: ['userRoles'],
@@ -57,20 +58,24 @@ const CreateUserModal = ({ onClose }) => {
     });
 
     // Mutation for creating user
-    const createUserMutation = useMutation({
-        mutationFn: createUser,
-        onSuccess: () => {
-            setWarningText("Пользователь успешно создан!");
-            setIsWarningOpen(true);
-            onClose();
-        },
-        onError: (error) => {
-            console.error("Ошибка при создании пользователя:", error);
-            setWarningText("Ошибка при создании пользователя. Попробуйте снова.");
-            setIsWarningOpen(true);
-        }
-    });
 
+// И обновите createUserMutation в useMutation:
+const createUserMutation = useMutation({
+    mutationFn: (userData) => createUser({
+        ...userData,
+        isDean: localIsDean // Добавляем статус декана
+    }),
+    onSuccess: () => {
+        setWarningText("Пользователь успешно создан!");
+        setIsWarningOpen(true);
+        onClose();
+    },
+    onError: (error) => {
+        console.error("Ошибка при создании пользователя:", error);
+        setWarningText("Ошибка при создании пользователя. Попробуйте снова.");
+        setIsWarningOpen(true);
+    }
+});
     
 
     const handleRoleChange = (selectedRole) => {
@@ -154,7 +159,9 @@ const CreateUserModal = ({ onClose }) => {
 
         checkUserMutation.mutate(localUser.login);
     };
-
+   const handleDeanToggle = () => {
+        setLocalIsDean(prev => !prev);
+    };
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -301,7 +308,13 @@ const CreateUserModal = ({ onClose }) => {
                             )}
                         </div>
 
-                        <div className="flex items-center justify-between mt-4 bg-gray-100 p-2 rounded-lg">
+                        
+                        
+                        {/* Блок статусов: Активен/Заблокирован и Декан */}
+                        <div className="flex items-center justify-between mt-4 space-x-4">
+                            {/* Переключатель Активен/Заблокирован */}
+                            <div className="flex-1 bg-gray-100 p-2 rounded-lg">
+                                <div className="flex items-center justify-between">
                             <span className="text-gray-700 font-medium">
                                 {localUser.isBlocked ? "Заблокирован" : "Активен"}
                             </span>
@@ -312,17 +325,27 @@ const CreateUserModal = ({ onClose }) => {
                                     onChange={handleBlockToggle}
                                     className="sr-only peer"
                                 />
-                                <div
-                                    className={`w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal-500 
-                                        rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-[26px]
-                                        after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white 
-                                        after:border after:rounded-full after:h-6 after:w-6 after:transition-all 
-                                        peer-checked:bg-teal-500`}
-                                ></div>
+                                  <div className={`w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal-500 rounded-full peer peer-checked:after:translate-x-[26px] after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-teal-500`}></div>
+                                   
                             </label>
                         </div>
+ </div>
+                            <div className="flex items-center">
+    <input
+        type="checkbox"
+        id="isDean"
+        onChange={handleDeanToggle}
+        className="appearance-none h-8 w-8 bg-white border-2 border-gray-300 rounded-xl checked:bg-teal-500 checked:border-teal-500 transition-all duration-200 cursor-pointer relative
+                   flex items-center justify-center after:content-['✔'] after:text-white after:text-base after:scale-0 checked:after:scale-100 after:transition-transform after:duration-200
+                   disabled:opacity-50 disabled:cursor-not-allowed"
+    />
+    <label htmlFor="isDean" className="ml-3 text-sm font-medium text-gray-700">
+        Декан
+    </label>
+</div>
+                        </div>
+            
                     </div>
-
                     <div className="flex justify-between mt-6">
                         {/* Кнопка сохранения */}
                         <button

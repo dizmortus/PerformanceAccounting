@@ -243,20 +243,6 @@ export const deleteGrades = async ({ statementId, lessonId, studentIds }) => {
     }
   };
 
-export const fetchAllUsers = async () => {
-    try {
-        const response = await fetchWithAuth("/api/users");
-        if (!response.ok) {
-            throw new Error(`Ошибка запроса: ${response.status}`);
-        }
-        const data = await response.json();
-        console.log("Полученные пользователи:", data);
-        return data;
-    } catch (error) {
-        console.error("Ошибка загрузки пользователей:", error);
-        return [];
-    }
-};
 
 
 // Загрузка возможных статусов пользователей
@@ -458,10 +444,40 @@ export const deleteStatement = async (id) => {
     }
 };
 
-// Получение всех преподавателей
-export const fetchAllTeachers = async () => {
+// Получение всех пользователей с возможностью фильтрации по факультету
+export const fetchAllUsers = async ({ sameFacultyOnly = false, facultyId = null } = {}) => {
     try {
-        const response = await fetchWithAuth("/api/users/all/teachers");
+        // Собираем параметры запроса
+        const params = new URLSearchParams();
+        
+        if (sameFacultyOnly) params.append('sameFacultyOnly', 'true');
+        if (facultyId) params.append('facultyId', facultyId);
+        
+        const url = `/api/users?${params.toString()}`;
+        const response = await fetchWithAuth(url);
+        
+        if (!response.ok) {
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error("Ошибка загрузки пользователей:", error);
+        return [];
+    }
+};
+
+// Получение всех преподавателей с возможностью фильтрации по факультету
+export const fetchAllTeachers = async ({ facultyId = null, sameFacultyOnly = false } = {}) => {
+    try {
+        // Собираем параметры запроса
+        const params = new URLSearchParams();
+        
+        if (facultyId) params.append('facultyId', facultyId);
+        if (sameFacultyOnly) params.append('sameFacultyOnly', 'true');
+        
+        const url = `/api/users/all/teachers?${params.toString()}`;
+        const response = await fetchWithAuth(url);
 
         if (!response.ok) {
             throw new Error(`Ошибка запроса: ${response.status}`);
@@ -472,10 +488,27 @@ export const fetchAllTeachers = async () => {
         return data;
     } catch (error) {
         console.error("Ошибка загрузки преподавателей:", error);
-        return []; // Возвращаем пустой массив в случае ошибки
+        return [];
     }
 };
 
+// Получение всех факультетов
+export const fetchAllFaculties = async () => {
+    try {
+        const response = await fetchWithAuth("/api/faculties");
+        
+        if (!response.ok) {
+            throw new Error(`Ошибка запроса: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log("Полученные факультеты:", data);
+        return data;
+    } catch (error) {
+        console.error("Ошибка загрузки факультетов:", error);
+        return [];
+    }
+};
 // Получение всех дисциплин
 export const fetchAllDisciplines = async () => {
     try {

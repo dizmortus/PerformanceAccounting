@@ -12,6 +12,14 @@ export default (sequelize, DataTypes) => {
       allowNull: false,
       field: 'Название'
     },
+    abbreviation: {
+      type: DataTypes.STRING(10),
+      allowNull: false,
+      field: 'Аббревиатура',
+      validate: {
+        len: [1, 10] // Ограничение длины от 1 до 10 символов
+      }
+    },
     deanLogin: {
       type: DataTypes.STRING,
       allowNull: false,

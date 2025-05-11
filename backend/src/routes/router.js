@@ -58,6 +58,7 @@ import {
 
 import { 
     getFacultyById,
+    getAllFaculties  // Добавьте этот импорт
 } from "../controllers/facultyController.js";
 
 import { 
@@ -247,7 +248,7 @@ router.get("/specialties", verifyToken, getAllSpecialties);
 router.get("/specialties/:id", verifyToken, getSpecialtyById);
 
 // Факультеты
-
+router.get("/faculties", verifyToken, getAllFaculties);
 router.get("/faculties/:id", verifyToken, getFacultyById);
 
 // Оценки

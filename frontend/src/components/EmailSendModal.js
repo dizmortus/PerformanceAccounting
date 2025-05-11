@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { sendStatementByEmail, fetchAllUsers } from '../utils/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { sendStatementByEmail, fetchAllUsers, fetchAllFaculties } from '../utils/api';
 import SearchableSelect from './admin/SearchableSelect';
 
 const EmailSendModal = ({ 
   isOpen, 
   onClose,
   statementId,
-  fileFormat, // Добавлен пропс для формата файла
+  fileFormat,
   initialRecipients = '',
   initialSubject = 'Ведомость',
   initialHeader = 'Уважаемые коллеги,',
-  initialText = 'Прошу ознакомится с ведомостью по дисциплине.'
+  initialText = 'Прошу ознакомится с ведомостью по дисциплине.',
+  currentUser
 }) => {
   const [recipients, setRecipients] = useState(initialRecipients);
   const [subject, setSubject] = useState(initialSubject);
@@ -23,25 +24,47 @@ const EmailSendModal = ({
   const [cooldownTimer, setCooldownTimer] = useState(0);
   const [users, setUsers] = useState([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [faculties, setFaculties] = useState([]);
+  const [selectedFaculty, setSelectedFaculty] = useState(null);
   
+  // Получаем факультеты
   useEffect(() => {
+    const loadFaculties = async () => {
+      try {
+        const response = await fetchAllFaculties();
+        setFaculties(response.faculties);
+        setSelectedFaculty(response.currentUserFaculty?.id || currentUser?.facultyId);
+      } catch (error) {
+        console.error("Error loading faculties:", error);
+      }
+    };
+    
     if (isOpen) {
-      loadUsers();
+      loadFaculties();
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser]);
 
-  const loadUsers = async () => {
+  // Функция загрузки пользователей с useCallback
+  const loadUsers = useCallback(async () => {
     setIsLoadingUsers(true);
     try {
-      const allUsers = await fetchAllUsers();
-      setUsers(allUsers.filter(user => user.email)); // Only include users with email
+      const allUsers = await fetchAllUsers({ facultyId: selectedFaculty });
+      setUsers(allUsers.filter(user => user.email));
     } catch (error) {
       console.error("Error loading users:", error);
     } finally {
       setIsLoadingUsers(false);
     }
-  };
+  }, [selectedFaculty]); // Зависимости функции
 
+  // Загружаем пользователей при изменении выбранного факультета
+  useEffect(() => {
+    if (isOpen) {
+      loadUsers();
+    }
+  }, [isOpen, loadUsers, selectedFaculty]);
+
+  // Остальной код остается без изменений
   useEffect(() => {
     let interval;
     if (cooldown) {
@@ -60,6 +83,8 @@ const EmailSendModal = ({
     }
     return () => clearInterval(interval);
   }, [cooldown]);
+
+
   
   const processRecipients = (recipients) => {
     return recipients
@@ -73,7 +98,6 @@ const EmailSendModal = ({
   };
 
   const handleAddRecipient = (selectedValue) => {
-    // Если передается email напрямую
     if (typeof selectedValue === 'string') {
       if (!validateEmail(selectedValue)) {
         console.error('Invalid email selected:', selectedValue);
@@ -93,9 +117,7 @@ const EmailSendModal = ({
           ? `${prev}, ${selectedValue}`
           : selectedValue;
       });
-    } 
-    // Если передается объект пользователя
-    else if (selectedValue?.email) {
+    } else if (selectedValue?.email) {
       const email = selectedValue.email;
       setRecipients(prev => {
         const currentEmails = prev 
@@ -113,6 +135,10 @@ const EmailSendModal = ({
     } else {
       console.error('Invalid selection:', selectedValue);
     }
+  };
+
+  const handleFacultyChange = (facultyId) => {
+    setSelectedFaculty(facultyId);
   };
 
   const handleSubmit = async () => {
@@ -147,11 +173,11 @@ const EmailSendModal = ({
       const result = await sendStatementByEmail(
         statementId,
         uniqueRecipients,
-        { // Изменено на объект параметров
+        {
           subject,
           messageText: emailText,
           header,
-          asPdf: fileFormat === 'pdf' // Передаем выбранный формат
+          asPdf: fileFormat === 'pdf'
         }
       );
   
@@ -170,6 +196,13 @@ const EmailSendModal = ({
 
   if (!isOpen) return null;
 
+  // Подготовка данных для выбора факультета
+  const facultyOptions = faculties.map(f => ({
+    id: f.id,
+    label: f.abbreviation,
+    fullName: f.name,
+    ...f
+  }));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 modal-open">
@@ -199,8 +232,9 @@ const EmailSendModal = ({
             <div>{success}</div>
           </div>
         )}
-
         <div className="space-y-4">
+          {/* Удален отдельный блок выбора факультета */}
+
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Получатели (через запятую) *
@@ -215,20 +249,38 @@ const EmailSendModal = ({
             />
             <p className="text-xs text-gray-500 mt-1">Укажите email-адреса через запятую</p>
             
-            <div className="mt-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Добавить из списка пользователей
-              </label>
-              <SearchableSelect
-                options={users}
-                value={null}
-                onChange={handleAddRecipient}
-                placeholder={isLoadingUsers ? "Загрузка пользователей..." : "Выберите пользователя"}
-                disabled={isLoadingUsers || isSending || cooldown}
-                formatOption={(user) => `${user.lastName} ${user.firstName} ${user.patronymic || ''} (${user.email})`}
-                searchBy={(user) => `${user.lastName} ${user.firstName} ${user.patronymic || ''} ${user.email}`.toLowerCase()}
-                getOptionValue={(user) => user.email}
-              />
+            {/* Блок выбора пользователя и факультета */}
+            <div className="flex items-end gap-2 mt-2">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Добавить из списка пользователей
+                </label>
+                <SearchableSelect
+                  options={users}
+                  value={null}
+                  onChange={handleAddRecipient}
+                  placeholder={isLoadingUsers ? "Загрузка пользователей..." : "Выберите пользователя"}
+                  disabled={isLoadingUsers || isSending || cooldown}
+                  formatOption={(user) => `${user.lastName} ${user.firstName} ${user.patronymic || ''} (${user.email})`}
+                  searchBy={(user) => `${user.lastName} ${user.firstName} ${user.patronymic || ''} ${user.email}`.toLowerCase()}
+                  getOptionValue={(user) => user.email}
+                />
+              </div>
+              <div className="w-24">
+                <label className="block text-sm font-medium text-gray-700">
+                  Факультет
+                </label>
+                <SearchableSelect
+                  options={facultyOptions}
+                  value={selectedFaculty}
+                  onChange={handleFacultyChange}
+                  placeholder="Фак."
+                  disabled={isSending || cooldown}
+                  formatOption={(f) => f.label}
+                  searchBy={(f) => f.fullName.toLowerCase()}
+                  getOptionValue={(f) => f.id}
+                />
+              </div>
             </div>
           </div>
 
@@ -274,7 +326,7 @@ const EmailSendModal = ({
           </div>
         </div>
 
-        <div className="flex justify-end mt-6">
+        <div className="flex justify-between  mt-6">
           <button
             className="h-[40px] px-4 flex items-center gap-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
             onClick={handleSubmit}
