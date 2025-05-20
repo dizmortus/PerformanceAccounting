@@ -215,10 +215,7 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
             return;
         }
     
-        if (localStatement.assessmentType === "курсовой проект" && 
-            (field === "practiceHours" || field === "creditUnits")) {
-            return;
-        }
+      
     
         const value = e.target.value;
         const newState = {
@@ -507,47 +504,45 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
                             )}
                         </div>
 
-                        {/* Practice hours and credit units */}
-                        <div className="flex gap-4">
-                            <div className="flex-1 relative">
-                                <label className="block text-sm font-medium text-gray-700">
-                                    Часы практики
-                                    {isSearchingStatement && (
-                                        <span className="ml-2 text-xs text-gray-500">(поиск...)</span>
-                                    )}
-                                </label>
-                                <input
-                                    type="number"
-                                    value={localStatement.practiceHours || ""}
-                                    onChange={(e) => handleChange(e, "practiceHours")}
-                                    min="1"
-                                    readOnly={localStatement.assessmentType === "курсовой проект"}
-                                    className={`w-full px-2 py-1 border rounded-lg ${
-                                        validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
-                                    } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
-                                />
-                                {validationErrors.practiceHours && (
-                                    <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
-                                )}
-                            </div>
+{/* Practice hours and credit units */}
+<div className="flex gap-4">
+    <div className="flex-1 relative">
+        <label className="block text-sm font-medium text-gray-700">
+            Часы практики
+            {isSearchingStatement && (
+                <span className="ml-2 text-xs text-gray-500">(поиск...)</span>
+            )}
+        </label>
+        <input
+            type="number"
+            value={localStatement.practiceHours || ""}
+            onChange={(e) => handleChange(e, "practiceHours")}
+            min="1"
+            className={`w-full px-2 py-1 border rounded-lg ${
+                validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
+            }`}
+        />
+        {validationErrors.practiceHours && (
+            <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
+        )}
+    </div>
 
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
-                                <input
-                                    type="number"
-                                    value={localStatement.creditUnits || ""}
-                                    onChange={(e) => handleChange(e, "creditUnits")}
-                                    min="1"
-                                    readOnly={localStatement.assessmentType === "курсовой проект"}
-                                    className={`w-full px-2 py-1 border rounded-lg ${
-                                        validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
-                                    } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
-                                />
-                                {validationErrors.creditUnits && (
-                                    <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
-                                )}
-                            </div>
-                        </div>
+    <div className="flex-1">
+        <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
+        <input
+            type="number"
+            value={localStatement.creditUnits || ""}
+            onChange={(e) => handleChange(e, "creditUnits")}
+            min="1"
+            className={`w-full px-2 py-1 border rounded-lg ${
+                validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
+            }`}
+        />
+        {validationErrors.creditUnits && (
+            <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
+        )}
+    </div>
+</div>
                     </div>
 
                     <div className="flex justify-between mt-6">

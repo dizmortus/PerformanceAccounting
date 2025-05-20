@@ -226,7 +226,7 @@ const GroupStatisticsTable = ({ onCancel }) => {
             placeholder="Выберите ведомость"
             disabled={!filters.groupId}
             formatOption={(option) => option.name}
-            getOptionValue={(option) => String(option.id)}
+          getOptionValue={(option) => option.id === null ? null : String(option.id)}
             className="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
         />
     </div>
