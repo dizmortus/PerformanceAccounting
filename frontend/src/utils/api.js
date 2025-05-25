@@ -1630,3 +1630,58 @@ export const hasUserDependencies = async (login) => {
         return true; // Безопасный вариант - предполагаем, что зависимости есть
     }
 };
+
+/**
+ * Импортирует сущности из Excel файла
+ * @param {string} entityType - Тип сущности (student, group, discipline, statement, user)
+ * @param {File} file - Excel файл
+ * @returns {Promise<Object>} - Результат импорта
+ */
+export const importEntitiesFromExcel = async (entityType, file) => {
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('entityType', entityType);
+
+        const response = await fetchWithAuth('/api/import/' + entityType, {
+            method: 'POST',
+            body: formData,
+            // Не устанавливаем Content-Type вручную - браузер сделает это сам с boundary
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при импорте данных');
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error('Ошибка при импорте данных:', error);
+        throw error;
+    }
+};
+export const exportGroupStatisticsToExcel = async (groupId, semester = null, statementId = null) => {
+    try {
+        const options = {};
+        if (semester) options.semester = semester;
+        if (statementId) options.statementId = statementId;
+
+        const query = new URLSearchParams(options).toString();
+        const url = `/api/groups/${groupId}/statistics/export${query ? `?${query}` : ''}`;
+
+        const response = await fetchWithAuth(url, {
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Ошибка при экспорте статистики');
+        }
+
+        return await response.blob();
+    } catch (error) {
+        console.error('Ошибка при экспорте статистики:', error);
+        throw error;
+    }
+};

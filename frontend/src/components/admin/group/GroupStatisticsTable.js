@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchAllGroups, fetchAllStatements, getGroupStatistics, fetchAllDisciplines } from "../../../utils/api";
+import { fetchAllGroups, fetchAllStatements, getGroupStatistics, fetchAllDisciplines, exportGroupStatisticsToExcel } from "../../../utils/api";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import WarningModal from '../../WarningModal';
 import SearchableSelect from '../SearchableSelect';
@@ -230,6 +230,69 @@ const GroupStatisticsTable = ({ onCancel }) => {
             className="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
         />
     </div>
+
+<div className="flex items-end"> {/* Обертка для выравнивания кнопки по нижнему краю */}
+<button
+    onClick={async () => {
+        if (!filters.groupId) {
+            setErrorMessage("Необходимо выбрать группу для экспорта");
+            setIsErrorModalOpen(true);
+            return;
+        }
+        try {
+            const blob = await exportGroupStatisticsToExcel(
+                filters.groupId,
+                filters.semester,
+                filters.statementId
+            );
+
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            let fileName = `Статистика_группы_${filters.groupId}`;
+            if (filters.semester) fileName += `_семестр_${filters.semester}`;
+            if (filters.statementId) fileName += `_ведомость_${filters.statementId}`;
+            fileName += '.xlsx';
+
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            setErrorMessage(`Ошибка при экспорте: ${error.message}`);
+            setIsErrorModalOpen(true);
+        }
+    }}
+    className={`h-[42px] px-4 flex items-center gap-2 rounded-lg shadow-md transition cursor-pointer
+        ${isStatsLoading 
+            ? 'bg-gray-300 cursor-wait' 
+            : 'bg-[#217346] hover:bg-[#1a5f38] text-white border border-[#1a5f38]'}
+        `}
+    disabled={isStatsLoading || !filters.groupId}
+>
+    {/* Иконка Excel */}
+    <div className="relative w-5 h-5">
+        <div className="absolute inset-0 bg-white border border-[#217346] rounded-sm shadow-sm flex items-center justify-center">
+            <div className="w-full h-full grid grid-cols-3 grid-rows-3 gap-[1px] p-[1px]">
+                {Array.from({ length: 9 }).map((_, idx) => (
+                    <div key={idx} className={`w-full h-full ${idx === 4 ? 'bg-white' : 'bg-[#217346]'}`} />
+                ))}
+            </div>
+        </div>
+        <div className="absolute -bottom-1 -right-1 bg-[#217346] text-white text-[8px] font-bold px-[2px] py-[1px] rounded-sm shadow-md">
+            X
+        </div>
+    </div>
+    {isStatsLoading ? (
+        <span className="text-base">Экспорт...</span>
+    ) : (
+        <span className="text-base">Экспорт</span>
+    )}
+</button>
+</div>
+            
 </div>
     
             {/* Таблица */}

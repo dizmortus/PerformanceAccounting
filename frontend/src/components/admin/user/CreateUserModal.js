@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { fetchPossibleStatuses, fetchPossibleRoles, createUser, checkUserByLogin } from "../../../utils/api";
+import { fetchPossibleStatuses, fetchPossibleRoles, createUser, checkUserByLogin, importEntitiesFromExcel } from "../../../utils/api";
 import ConfirmModal from '../../ConfirmModal';
 import WarningModal from '../../WarningModal';
 import SearchableSelect from '../SearchableSelect';
@@ -19,14 +19,16 @@ const CreateUserModal = ({ onClose }) => {
         role: "Преподаватель",
         newPassword: "",
         isBlocked: false,
-          isDean: false // Добавлено новое поле
+        isDean: false
     });
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [isWarningOpen, setIsWarningOpen] = useState(false);
     const [warningText, setWarningText] = useState("");
     const [emailError, setEmailError] = useState("");
     const [validationErrors, setValidationErrors] = useState({});
-   const [localIsDean, setLocalIsDean] = useState(false); 
+    const [localIsDean, setLocalIsDean] = useState(false);
+    const [fileKey, setFileKey] = useState(Date.now());
+
     // Fetch data with React Query
     const { data: roles = [] } = useQuery({
         queryKey: ['userRoles'],
@@ -51,32 +53,62 @@ const CreateUserModal = ({ onClose }) => {
                 createUserMutation.mutate({
                     ...localUser,
                     password: localUser.newPassword,
-                    status: localUser.isBlocked ? "Заблокированный" : "Активный"
+                    status: localUser.isBlocked ? "Заблокированный" : "Активный",
+                    isDean: localIsDean
                 });
             }
         }
     });
 
     // Mutation for creating user
+    const createUserMutation = useMutation({
+        mutationFn: (userData) => createUser({
+            ...userData,
+            isDean: localIsDean
+        }),
+        onSuccess: () => {
+            setWarningText("Пользователь успешно создан!");
+            setIsWarningOpen(true);
+            onClose();
+        },
+        onError: (error) => {
+            console.error("Ошибка при создании пользователя:", error);
+            setWarningText("Ошибка при создании пользователя. Попробуйте снова.");
+            setIsWarningOpen(true);
+        }
+    });
 
-// И обновите createUserMutation в useMutation:
-const createUserMutation = useMutation({
-    mutationFn: (userData) => createUser({
-        ...userData,
-        isDean: localIsDean // Добавляем статус декана
-    }),
-    onSuccess: () => {
-        setWarningText("Пользователь успешно создан!");
-        setIsWarningOpen(true);
-        onClose();
-    },
-    onError: (error) => {
-        console.error("Ошибка при создании пользователя:", error);
-        setWarningText("Ошибка при создании пользователя. Попробуйте снова.");
-        setIsWarningOpen(true);
-    }
-});
-    
+    // Mutation for importing users from Excel
+    const importUsersMutation = useMutation({
+        mutationFn: (file) => importEntitiesFromExcel('user', file),
+        onSuccess: (data) => {
+            if (data.errorCount > 0) {
+                setWarningText(`Импорт завершен с ошибками. Успешно: ${data.importedCount}, Ошибок: ${data.errorCount}`);
+            } else {
+                setWarningText(`Успешно импортировано ${data.importedCount} пользователей`);
+            }
+            setIsWarningOpen(true);
+            if (data.errorCount === 0) onClose();
+        },
+        onError: (error) => {
+            console.error("Ошибка при импорте пользователей:", error);
+            setWarningText(error.message || "Ошибка при импорте пользователей. Проверьте формат файла.");
+            setIsWarningOpen(true);
+        }
+    });
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+            await importUsersMutation.mutateAsync(file);
+            setFileKey(Date.now());
+        } catch (error) {
+            console.error("Import error:", error);
+            setFileKey(Date.now());
+        }
+    };
 
     const handleRoleChange = (selectedRole) => {
         setLocalUser((prev) => ({
@@ -116,7 +148,6 @@ const createUserMutation = useMutation({
             }
         }
     
-        // Проверка совпадения паролей после обновления localUser
         if ((field === "newPassword" || field === "confirmPassword")) {
             if (updatedUser.newPassword && updatedUser.confirmPassword) {
                 if (updatedUser.newPassword !== updatedUser.confirmPassword) {
@@ -129,7 +160,6 @@ const createUserMutation = useMutation({
             }
         }
     };
-    
 
     const handleCreate = async () => {
         const requiredFields = ["login", "lastName", "firstName", "email", "newPassword", "confirmPassword"];
@@ -159,9 +189,11 @@ const createUserMutation = useMutation({
 
         checkUserMutation.mutate(localUser.login);
     };
-   const handleDeanToggle = () => {
+
+    const handleDeanToggle = () => {
         setLocalIsDean(prev => !prev);
     };
+
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -308,71 +340,101 @@ const createUserMutation = useMutation({
                             )}
                         </div>
 
-                        
-                        
                         {/* Блок статусов: Активен/Заблокирован и Декан */}
                         <div className="flex items-center justify-between mt-4 space-x-4">
-                            {/* Переключатель Активен/Заблокирован */}
                             <div className="flex-1 bg-gray-100 p-2 rounded-lg">
                                 <div className="flex items-center justify-between">
-                            <span className="text-gray-700 font-medium">
-                                {localUser.isBlocked ? "Заблокирован" : "Активен"}
-                            </span>
-                            <label className="relative inline-flex items-center cursor-pointer">
+                                    <span className="text-gray-700 font-medium">
+                                        {localUser.isBlocked ? "Заблокирован" : "Активен"}
+                                    </span>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={!localUser.isBlocked}
+                                            onChange={handleBlockToggle}
+                                            className="sr-only peer"
+                                        />
+                                        <div className={`w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal-500 rounded-full peer peer-checked:after:translate-x-[26px] after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-teal-500`}></div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div className="flex items-center">
                                 <input
                                     type="checkbox"
-                                    checked={!localUser.isBlocked}
-                                    onChange={handleBlockToggle}
-                                    className="sr-only peer"
+                                    id="isDean"
+                                    onChange={handleDeanToggle}
+                                    className="appearance-none h-8 w-8 bg-white border-2 border-gray-300 rounded-xl checked:bg-teal-500 checked:border-teal-500 transition-all duration-200 cursor-pointer relative
+                                               flex items-center justify-center after:content-['✔'] after:text-white after:text-base after:scale-0 checked:after:scale-100 after:transition-transform after:duration-200
+                                               disabled:opacity-50 disabled:cursor-not-allowed"
                                 />
-                                  <div className={`w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal-500 rounded-full peer peer-checked:after:translate-x-[26px] after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-teal-500`}></div>
-                                   
-                            </label>
+                                <label htmlFor="isDean" className="ml-3 text-sm font-medium text-gray-700">
+                                    Декан
+                                </label>
+                            </div>
                         </div>
- </div>
-                            <div className="flex items-center">
-    <input
-        type="checkbox"
-        id="isDean"
-        onChange={handleDeanToggle}
-        className="appearance-none h-8 w-8 bg-white border-2 border-gray-300 rounded-xl checked:bg-teal-500 checked:border-teal-500 transition-all duration-200 cursor-pointer relative
-                   flex items-center justify-center after:content-['✔'] after:text-white after:text-base after:scale-0 checked:after:scale-100 after:transition-transform after:duration-200
-                   disabled:opacity-50 disabled:cursor-not-allowed"
-    />
-    <label htmlFor="isDean" className="ml-3 text-sm font-medium text-gray-700">
-        Декан
-    </label>
-</div>
-                        </div>
-            
                     </div>
                     <div className="flex justify-between mt-6">
-                        {/* Кнопка сохранения */}
                         <button
-  className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
-  onClick={handleCreate}
-  disabled={createUserMutation.isPending}
->
-  {createUserMutation.isPending ? (
-    <>
+                            className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                            onClick={handleCreate}
+                            disabled={createUserMutation.isPending}
+                        >
+                            {createUserMutation.isPending ? (
+                                <>
+                                    <span>Создание...</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                                    </svg>
+                                </>
+                            ) : (
+                                <>
+                                    <span>Создать</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                </>
+                            )}
+                        </button>
 
-      <span>Создание...</span>
-      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" viewBox="0 0 20 20" fill="currentColor">
-        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-      </svg>
-    </>
-  ) : (
-    <>
-
-      <span>Создать</span>
-      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-      </svg>
-    </>
-  )}
-</button>
-
-
+                        {/* Кнопка импорта */}
+                        <div className="relative">
+                            <input
+                                type="file"
+                                id="excel-import"
+                                key={fileKey}
+                                accept=".xlsx,.xls"
+                                onChange={handleFileChange}
+                                className="hidden"
+                            />
+                            <label
+                                htmlFor="excel-import"
+                                className={`h-[40px] px-4 flex items-center gap-2 rounded-lg shadow-md transition cursor-pointer
+                                    ${importUsersMutation.isPending 
+                                        ? 'bg-gray-300 cursor-wait' 
+                                        : 'bg-[#217346] hover:bg-[#1a5f38] text-white border border-[#1a5f38]'}
+                                    `}
+                                disabled={importUsersMutation.isPending}
+                            >
+                                <div className="relative w-5 h-5">
+                                    <div className="absolute inset-0 bg-white border border-[#217346] rounded-sm shadow-sm flex items-center justify-center">
+                                        <div className="w-full h-full grid grid-cols-3 grid-rows-3 gap-[1px] p-[1px]">
+                                            {Array.from({ length: 9 }).map((_, idx) => (
+                                                <div key={idx} className={`w-full h-full ${idx === 4 ? 'bg-white' : 'bg-[#217346]'}`} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="absolute -bottom-1 -right-1 bg-[#217346] text-white text-[8px] font-bold px-[2px] py-[1px] rounded-sm shadow-md">
+                                        X
+                                    </div>
+                                </div>
+                                
+                                {importUsersMutation.isPending ? (
+                                    <span className="text-base">Импорт...</span>
+                                ) : (
+                                    <span className="text-base">Импорт</span>
+                                )}
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -392,4 +454,4 @@ const createUserMutation = useMutation({
     );
 };
 
-export default CreateUserModal; 
+export default CreateUserModal;

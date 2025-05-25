@@ -1,7 +1,7 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { createStudent, fetchAllGroups } from "../../../utils/api";
+import { createStudent, fetchAllGroups, importEntitiesFromExcel } from "../../../utils/api";
 import WarningModal from '../../WarningModal';
 import SearchableSelect from '../SearchableSelect';
 
@@ -17,7 +17,7 @@ const CreateStudentModal = ({ onClose }) => {
     const [isWarningOpen, setIsWarningOpen] = useState(false);
     const [warningText, setWarningText] = useState("");
     const [validationErrors, setValidationErrors] = useState({});
-
+const [fileKey, setFileKey] = useState(Date.now()); // Добавьте это в состояние компонента
     const { data: groups = [], isLoading: isGroupsLoading } = useQuery({
         queryKey: ['groups'],
         queryFn: fetchAllGroups,
@@ -27,7 +27,7 @@ const CreateStudentModal = ({ onClose }) => {
     const createStudentMutation = useMutation({
         mutationFn: createStudent,
         onSuccess: () => {
-            onClose(); // Просто закрываем модальное окно
+            onClose();
         },
         onError: (error) => {
             console.error("Ошибка при создании студента:", error);
@@ -35,6 +35,39 @@ const CreateStudentModal = ({ onClose }) => {
             setIsWarningOpen(true);
         }
     });
+
+    const importStudentsMutation = useMutation({
+        mutationFn: (file) => importEntitiesFromExcel('student', file),
+        onSuccess: (data) => {
+            if (data.errorCount > 0) {
+                setWarningText(`Импорт завершен с ошибками. Успешно: ${data.importedCount}, Ошибок: ${data.errorCount}`);
+            } else {
+                setWarningText(`Успешно импортировано ${data.importedCount} студентов`);
+            }
+            setIsWarningOpen(true);
+            if (data.errorCount === 0) onClose();
+        },
+        onError: (error) => {
+            console.error("Ошибка при импорте студентов:", error);
+            setWarningText(error.message || "Ошибка при импорте студентов. Проверьте формат файла.");
+            setIsWarningOpen(true);
+        }
+    });
+
+const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+        await importStudentsMutation.mutateAsync(file);
+        // Сбросить значение input после успешной или неудачной загрузки
+        setFileKey(Date.now());
+    } catch (error) {
+        console.error("Import error:", error);
+        // Сбросить значение input даже при ошибке
+        setFileKey(Date.now());
+    }
+};
 
     const handleChange = (e, field) => {
         const value = e.target.value;
@@ -84,6 +117,7 @@ const CreateStudentModal = ({ onClose }) => {
 
         createStudentMutation.mutate(localStudent);
     };
+
     return (
         <>
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -100,6 +134,7 @@ const CreateStudentModal = ({ onClose }) => {
                             </svg>
                         </button>
                     </div>
+
                     <div className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700">ID студента</label>
@@ -178,8 +213,9 @@ const CreateStudentModal = ({ onClose }) => {
                         </div>
                     </div>
     
+                   
                     <div className="flex justify-between mt-6">
-                        {/* Кнопка сохранения */}
+                        {/* Кнопка создания (перенесена влево) */}
                         <button
                             className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
                             onClick={handleCreate}
@@ -201,6 +237,48 @@ const CreateStudentModal = ({ onClose }) => {
                                 </>
                             )}
                         </button>
+
+                        {/* Кнопка импорта из Excel (перенесена вправо) */}
+                        <div className="relative">
+<input
+    type="file"
+    id="excel-import"
+    key={fileKey} // Добавьте этот атрибут
+    accept=".xlsx,.xls"
+    onChange={handleFileChange}
+    className="hidden"
+/>
+                            <label
+                                htmlFor="excel-import"
+                                className={`h-[40px] px-4 flex items-center gap-2 rounded-lg shadow-md transition cursor-pointer
+                                    ${importStudentsMutation.isPending 
+                                        ? 'bg-gray-300 cursor-wait' 
+                                        : 'bg-[#217346] hover:bg-[#1a5f38] text-white border border-[#1a5f38]'}
+                                    `}
+                                disabled={importStudentsMutation.isPending}
+                            >
+                                {/* Иконка Excel */}
+                                <div className="relative w-5 h-5">
+                                    <div className="absolute inset-0 bg-white border border-[#217346] rounded-sm shadow-sm flex items-center justify-center">
+                                        <div className="w-full h-full grid grid-cols-3 grid-rows-3 gap-[1px] p-[1px]">
+                                            {Array.from({ length: 9 }).map((_, idx) => (
+                                                <div key={idx} className={`w-full h-full ${idx === 4 ? 'bg-white' : 'bg-[#217346]'}`} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="absolute -bottom-1 -right-1 bg-[#217346] text-white text-[8px] font-bold px-[2px] py-[1px] rounded-sm shadow-md">
+                                        X
+                                    </div>
+                                </div>
+                                
+                                {/* Текст кнопки с тем же размером, что и у "Создать" */}
+                                {importStudentsMutation.isPending ? (
+                                    <span className="text-base">Импорт...</span>
+                                ) : (
+                                    <span className="text-base">Импорт</span>
+                                )}
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -1,4 +1,5 @@
 import express from "express";
+import multer from 'multer';
 import { 
     login, 
     register, 
@@ -86,7 +87,7 @@ import {
 
 import { 
     generateStatementDocument,
-    getStatementFile, sendStatementByEmail 
+    getStatementFile, sendStatementByEmail,importEntitiesFromExcel, exportGroupStatisticsToExcel 
 } from "../controllers/fileController.js";
 
 import {
@@ -100,6 +101,8 @@ import {
 import dotenv from "dotenv";
 
 dotenv.config();
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 const router = express.Router();
 
@@ -228,6 +231,7 @@ router.post('/groups', verifyToken, createGroup);
 router.put('/groups/:id', verifyToken, updateGroup);
 router.delete('/groups/:id', verifyToken, deleteGroup);
 router.get("/groups/:groupId/has-dependencies", verifyToken, hasGroupDependencies);
+router.get('/groups/:groupId/statistics/export',verifyToken, exportGroupStatisticsToExcel);
 router.get("/groups/:groupId/statistics", verifyToken, async (req, res, next) => { 
     try {
         const groupId = Number(req.params.groupId);
@@ -269,5 +273,5 @@ router.post("/statements/:statementId/generate", verifyToken, async (req, res) =
 });
 
 router.get("/statements/:statementId/file", verifyToken, getStatementFile);
-
+router.post("/import/:entityType", verifyToken, upload.single('file'), importEntitiesFromExcel);
 export default router;

@@ -31,8 +31,8 @@ async function initializeDatabase() {
     try {
         //await sequelize.sync({ force: true }); // Удалит и пересоздаст все таблицы
 
-        await sequelize.sync({ alter: true });
-        console.log("Database synced successfully");
+        // await sequelize.sync({ alter: true });
+        // console.log("Database synced successfully");
 
         const saltRounds = 10;
         const adminPassword = await bcrypt.hash("1111", saltRounds);
@@ -45,7 +45,7 @@ async function initializeDatabase() {
                 passwordHash: adminPassword,
                 lastName: "Администратор",
                 firstName: "Системный",
-                middleName: null,
+                patronymic: null,
                 role: "Администратор",
             },
         });
@@ -57,7 +57,7 @@ async function initializeDatabase() {
                 passwordHash: teacherPassword,
                 lastName: "Преподаватель",
                 firstName: "Пользователь",
-                middleName: null,
+                patronymic: null,
                 role: "Преподаватель",
             },
         });

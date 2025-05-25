@@ -7,8 +7,13 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import { createStudent } from "../controllers/studentController.js";
+import {  createGroup, calculateGroupStatistics} from "../controllers/groupController.js";
+import { createStatement} from "../controllers/statementController.js";
+import {createDiscipline } from "../controllers/disciplineController.js";
+import { createUser } from "../controllers/userController.js";
 import validator from 'validator';
-
+import excel from 'exceljs';
 // Получаем текущую директорию файла
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -192,9 +197,6 @@ export const generateStatementDocument = async (statementId) => {
         throw new Error("Ошибка генерации ведомости");
     }
 };
-
-
-
 
 import { exec } from 'child_process';
 import util from 'util';
@@ -495,4 +497,322 @@ export const sendStatementByEmail = async (req, res) => {
             cleanupPdfFile(tempPdfPath);
         }
     }
+};
+
+export const importEntitiesFromExcel = async (req, res) => {
+  if (!req.file) {
+    console.warn(`[${new Date().toISOString()}] Загрузка файла не выполнена`);
+    return res.status(400).json({ error: "Файл не был загружен" });
+  }
+
+  const { entityType } = req.params;
+
+  if (!['student', 'group', 'discipline', 'statement', 'user'].includes(entityType)) {
+    console.warn(`[${new Date().toISOString()}] Неподдерживаемый тип сущности: ${entityType}`);
+    return res.status(400).json({ error: "Неподдерживаемый тип сущности" });
+  }
+
+  console.log(`[${new Date().toISOString()}] Начат импорт сущностей типа: ${entityType}`);
+
+  try {
+    const workbook = new excel.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const worksheet = workbook.worksheets[0];
+
+    const entitiesToImport = [];
+    const errors = [];
+    let successCount = 0;
+
+    const columnMapping = {
+      student: {
+        studentId: 1, lastName: 2, firstName: 3, patronymic: 4, groupId: 5
+      },
+      discipline: {
+        id: 1, name: 2, isPractice: 3
+      },
+      statement: {
+        assessmentType: 1,disciplineId: 2, groupId: 3,semester: 4, teacherLogin: 5, classTeacherLogin: 6, date: 7, 
+        practiceHours: 8,   creditUnits: 9
+      },
+      user: {
+        login: 1, lastName: 2, firstName: 3,
+        patronymic: 4,  email: 5, role: 6,password: 7, status: 8, isDean: 9
+      },
+      group: {
+        id: 1, specialtyId: 2, admissionYear: 3, educationForm: 4, educationLevel: 5
+      }
+    };
+
+    console.log(`[${new Date().toISOString()}] Чтение строк из Excel...`);
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return;
+
+      try {
+        const entityData = {};
+        const mapping = columnMapping[entityType];
+
+        for (const [field, col] of Object.entries(mapping)) {
+          let value = row.getCell(col).value;
+
+          if ((field === 'studentId' || field === 'groupId' || field === 'id') && value) {
+            value = Number(value);
+            if (isNaN(value)) {
+              throw new Error(`Поле ${field} должно быть числом`);
+            }
+          }
+
+          entityData[field] = value;
+        }
+
+        entitiesToImport.push(entityData);
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Ошибка при чтении строки ${rowNumber}: ${error.message}`);
+        errors.push({
+          row: rowNumber,
+          error: error.message,
+          data: row.values
+        });
+      }
+    });
+
+    console.log(`[${new Date().toISOString()}] Обнаружено записей для импорта: ${entitiesToImport.length}`);
+
+    for (const [index, entityData] of entitiesToImport.entries()) {
+      try {
+        if (entityType === 'student') {
+          if (!entityData.studentId || !entityData.lastName || !entityData.firstName || !entityData.groupId) {
+            throw new Error("Отсутствуют обязательные поля");
+          }
+        }
+
+        const mockReq = {
+          body: entityData,
+          user: req.user
+        };
+
+        await new Promise((resolve, reject) => {
+          const mockRes = {
+            status: function (code) {
+              this.statusCode = code;
+              return this;
+            },
+            json: function (data) {
+              if (this.statusCode >= 400) {
+                reject(new Error(data.message || data.error || "Ошибка при создании"));
+              } else {
+                resolve(data);
+              }
+            }
+          };
+
+          switch (entityType) {
+            case 'student':
+              createStudent(mockReq, mockRes).catch(reject);
+              break;
+            case 'discipline':
+              createDiscipline(mockReq, mockRes).catch(reject);
+              break;
+            case 'statement':
+              createStatement(mockReq, mockRes).catch(reject);
+              break;
+            case 'user':
+              createUser(mockReq, mockRes).catch(reject);
+              break;
+            case 'group':
+              createGroup(mockReq, mockRes).catch(reject);
+              break;
+          }
+        });
+
+        console.log(`[${new Date().toISOString()}] Импортирована запись ${index + 2}: ${JSON.stringify(entityData)}`);
+        successCount++;
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Ошибка при импорте строки ${index + 2}: ${error.message}`);
+        errors.push({
+          row: index + 2,
+          error: error.message,
+          data: entityData
+        });
+      }
+    }
+
+    console.log(`[${new Date().toISOString()}] Импорт завершен. Успешно: ${successCount}, С ошибками: ${errors.length}`);
+
+    res.status(200).json({
+      message: "Импорт завершен",
+      entityType,
+      importedCount: successCount,
+      errorCount: errors.length,
+      errors: errors,
+      success: successCount === entitiesToImport.length
+    });
+
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Ошибка при импорте ${entityType}:`, error);
+    res.status(500).json({
+      error: "Ошибка сервера",
+      details: error.message
+    });
+  }
+};
+export const exportGroupStatisticsToExcel = async (req, res) => {
+  const { groupId } = req.params;
+  const { semester, statementId } = req.query;
+
+  if (!groupId) {
+    console.warn(`[${new Date().toISOString()}] Не указан ID группы`);
+    return res.status(400).json({ error: "Не указан ID группы" });
+  }
+
+  console.log(`[${new Date().toISOString()}] Начато формирование статистики для группы ID: ${groupId}, семестр: ${semester || 'не указан'}, ведомость: ${statementId || 'не указана'}`);
+
+  try {
+    // 1. Получаем статистику по группе
+    console.log(`[${new Date().toISOString()}] Получение статистики по группе...`);
+    const statistics = await calculateGroupStatistics(groupId, semester, statementId);
+    console.log(`[${new Date().toISOString()}] Статистика успешно получена. Кол-во студентов: ${statistics.students.length}`);
+
+    if (!statistics.students.length) {
+      console.warn(`[${new Date().toISOString()}] Нет данных для экспорта по группе ${groupId}`);
+      return res.status(404).json({ error: "Нет данных для экспорта" });
+    }
+
+    // 2. Создаем новую книгу Excel
+    console.log(`[${new Date().toISOString()}] Создание Excel-файла...`);
+    const workbook = new excel.Workbook();
+    const worksheet = workbook.addWorksheet('Статистика группы');
+
+    // 3. Определяем заголовки столбцов с указанием стилей для ID студента
+    console.log(`[${new Date().toISOString()}] Формирование заголовков столбцов...`);
+    const headers = [
+      { 
+        header: 'ID студента', 
+        key: 'studentId', 
+        width: 15,
+        style: {
+          numFmt: '0', // Формат числа без десятичных знаков
+          alignment: { horizontal: 'left' }
+        }
+      },
+      { header: 'Фамилия', key: 'lastName', width: 15 },
+      { header: 'Имя', key: 'firstName', width: 15 },
+      { header: 'Отчество', key: 'patronymic', width: 15 }
+    ];
+
+    // ... остальные заголовки без изменений
+    if (statistics.students.some(s => s.averageGrade !== null)) {
+      headers.push({ header: 'Средний балл', key: 'averageGrade', width: 12 });
+    }
+
+    if (statistics.students.some(s => s.attendancePercentage !== null)) {
+      headers.push(
+        { header: 'Посещаемость (%)', key: 'attendancePercentage', width: 15 },
+        { header: 'Пропущено занятий', key: 'missedLessons', width: 15 }
+      );
+    }
+
+    if (statistics.students.some(s => s.certificationPercentage !== null)) {
+      headers.push({ header: 'Аттестация (%)', key: 'certificationPercentage', width: 15 });
+    }
+
+    if (statistics.students.some(s => s.certificationGrade !== null)) {
+      headers.push({ header: 'Оценка аттестации', key: 'certificationGrade', width: 15 });
+    }
+
+    worksheet.columns = headers;
+
+    // 5. Добавляем данные студентов
+    console.log(`[${new Date().toISOString()}] Добавление строк студентов...`);
+    statistics.students.forEach((student) => {
+      const rowData = {
+        studentId: Number(student.studentId), // Явное преобразование в число
+        lastName: student.lastName,
+        firstName: student.firstName,
+        patronymic: student.patronymic
+      };
+
+      if (student.averageGrade !== null) {
+        rowData.averageGrade = student.averageGrade;
+      }
+
+      if (student.attendancePercentage !== null) {
+        rowData.attendancePercentage = student.attendancePercentage;
+        rowData.missedLessons = student.missedLessons;
+      }
+
+      if (student.certificationPercentage !== null) {
+        rowData.certificationPercentage = student.certificationPercentage;
+      }
+
+      if (student.certificationGrade !== null) {
+        rowData.certificationGrade = student.certificationGrade;
+      }
+
+      const row = worksheet.addRow(rowData);
+      
+      // Применяем числовой формат к ячейке с ID студента
+      row.getCell('studentId').numFmt = '0'; // Формат числа без десятичных знаков
+    });
+
+    // ... остальная часть функции без изменений
+    // 6. Добавляем итоговую статистику
+    console.log(`[${new Date().toISOString()}] Добавление итоговой статистики группы...`);
+    worksheet.addRow([]);
+
+    const summaryRow = worksheet.addRow(['Итого по группе:']);
+    summaryRow.font = { bold: true };
+
+    if (statistics.groupAverage !== null) {
+      worksheet.addRow(['Средний балл группы:', statistics.groupAverage]);
+    }
+
+    if (statistics.groupAttendance !== null) {
+      worksheet.addRow(['Посещаемость группы (%):', statistics.groupAttendance]);
+      worksheet.addRow(['Среднее пропущенных занятий:', statistics.groupMissedLessons]);
+    }
+
+    if (statistics.groupCertificationPercentage !== null) {
+      worksheet.addRow(['Аттестация группы (%):', statistics.groupCertificationPercentage]);
+    }
+
+    if (statistics.groupCertificationAverage !== null) {
+      worksheet.addRow(['Средняя оценка аттестации:', statistics.groupCertificationAverage]);
+    }
+
+    // 7. Форматируем заголовки
+    worksheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    // 8. Генерируем имя файла
+    let fileName = `Статистика_группы_${groupId}`;
+    if (semester) fileName += `_семестр_${semester}`;
+    if (statementId) fileName += `_ведомость_${statementId}`;
+    fileName += '.xlsx';
+
+    console.log(`[${new Date().toISOString()}] Генерация имени файла: ${fileName}`);
+
+    // 9. Отправляем файл
+    console.log(`[${new Date().toISOString()}] Отправка Excel-файла клиенту...`);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=${encodeURIComponent(fileName)}`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+
+    console.log(`[${new Date().toISOString()}] Файл статистики для группы ${groupId} успешно сформирован и отправлен`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Ошибка при формировании статистики для группы ${groupId}:`, error);
+    res.status(500).json({
+      error: "Ошибка сервера",
+      details: error.message
+    });
+  }
 };

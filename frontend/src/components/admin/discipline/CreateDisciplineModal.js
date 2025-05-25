@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { createDiscipline } from "../../../utils/api";
+import { createDiscipline, importEntitiesFromExcel } from "../../../utils/api";
 import WarningModal from '../../WarningModal';
 
 const CreateDisciplineModal = ({ onClose }) => {
@@ -14,7 +14,7 @@ const CreateDisciplineModal = ({ onClose }) => {
     const [isWarningOpen, setIsWarningOpen] = useState(false);
     const [warningText, setWarningText] = useState("");
     const [validationErrors, setValidationErrors] = useState({});
-
+const [fileKey, setFileKey] = useState(Date.now()); // Добавьте это в состояние компонента
     const createDisciplineMutation = useMutation({
         mutationFn: createDiscipline,
         onSuccess: () => {
@@ -26,6 +26,39 @@ const CreateDisciplineModal = ({ onClose }) => {
             setIsWarningOpen(true);
         }
     });
+
+    const importDisciplinesMutation = useMutation({
+        mutationFn: (file) => importEntitiesFromExcel('discipline', file),
+        onSuccess: (data) => {
+            if (data.errorCount > 0) {
+                setWarningText(`Импорт завершен с ошибками. Успешно: ${data.importedCount}, Ошибок: ${data.errorCount}`);
+            } else {
+                setWarningText(`Успешно импортировано ${data.importedCount} дисциплин`);
+            }
+            setIsWarningOpen(true);
+            if (data.errorCount === 0) onClose();
+        },
+        onError: (error) => {
+            console.error("Ошибка при импорте дисциплин:", error);
+            setWarningText(error.message || "Ошибка при импорте дисциплин. Проверьте формат файла.");
+            setIsWarningOpen(true);
+        }
+    });
+
+const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+        await importDisciplinesMutation.mutateAsync(file);
+        // Сбросить значение input после успешной или неудачной загрузки
+        setFileKey(Date.now());
+    } catch (error) {
+        console.error("Import error:", error);
+        // Сбросить значение input даже при ошибке
+        setFileKey(Date.now());
+    }
+};
 
     const handleChange = (e, field) => {
         const value = e.target.value;
@@ -118,21 +151,22 @@ const CreateDisciplineModal = ({ onClose }) => {
                         </div>
     
                         <div className="flex items-center mt-4">
-    <input
-        type="checkbox"
-        id="isPractice"
-        checked={localDiscipline.isPractice}
-        onChange={handlePracticeChange}
-        className="appearance-none h-8 w-8 bg-white border-2 border-gray-300 rounded-xl checked:bg-teal-500 checked:border-teal-500 transition-all duration-200 cursor-pointer relative
-                   flex items-center justify-center after:content-['✔'] after:text-white after:text-base after:scale-0 checked:after:scale-100 after:transition-transform after:duration-200"
-    />
-    <label htmlFor="isPractice" className="ml-3 text-sm font-medium text-gray-700">
-        Является практикой
-    </label>
-</div>
+                            <input
+                                type="checkbox"
+                                id="isPractice"
+                                checked={localDiscipline.isPractice}
+                                onChange={handlePracticeChange}
+                                className="appearance-none h-8 w-8 bg-white border-2 border-gray-300 rounded-xl checked:bg-teal-500 checked:border-teal-500 transition-all duration-200 cursor-pointer relative
+                                           flex items-center justify-center after:content-['✔'] after:text-white after:text-base after:scale-0 checked:after:scale-100 after:transition-transform after:duration-200"
+                            />
+                            <label htmlFor="isPractice" className="ml-3 text-sm font-medium text-gray-700">
+                                Является практикой
+                            </label>
+                        </div>
                     </div>
     
                     <div className="flex justify-between mt-6">
+                        {/* Кнопка создания (остается слева) */}
                         <button
                             className="h-[40px] px-4 flex items-center gap-2 bg-teal-500 text-white rounded-lg shadow-md hover:bg-teal-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
                             onClick={handleCreate}
@@ -154,6 +188,47 @@ const CreateDisciplineModal = ({ onClose }) => {
                                 </>
                             )}
                         </button>
+
+                        {/* Кнопка импорта (перенесена вправо) */}
+                        <div className="relative">
+                           <input
+                                type="file"
+                                id="excel-import"
+                                key={fileKey} // Добавлен key для сброса
+                                accept=".xlsx,.xls"
+                                onChange={handleFileChange}
+                                className="hidden"
+                            />
+                            <label
+                                htmlFor="excel-import"
+                                className={`h-[40px] px-4 flex items-center gap-2 rounded-lg shadow-md transition cursor-pointer
+                                    ${importDisciplinesMutation.isPending 
+                                        ? 'bg-gray-300 cursor-wait' 
+                                        : 'bg-[#217346] hover:bg-[#1a5f38] text-white border border-[#1a5f38]'}
+                                    `}
+                                disabled={importDisciplinesMutation.isPending}
+                            >
+                                {/* Иконка Excel */}
+                                <div className="relative w-5 h-5">
+                                    <div className="absolute inset-0 bg-white border border-[#217346] rounded-sm shadow-sm flex items-center justify-center">
+                                        <div className="w-full h-full grid grid-cols-3 grid-rows-3 gap-[1px] p-[1px]">
+                                            {Array.from({ length: 9 }).map((_, idx) => (
+                                                <div key={idx} className={`w-full h-full ${idx === 4 ? 'bg-white' : 'bg-[#217346]'}`} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="absolute -bottom-1 -right-1 bg-[#217346] text-white text-[8px] font-bold px-[2px] py-[1px] rounded-sm shadow-md">
+                                        X
+                                    </div>
+                                </div>
+                                
+                                {importDisciplinesMutation.isPending ? (
+                                    <span className="text-base">Импорт...</span>
+                                ) : (
+                                    <span className="text-base">Импорт</span>
+                                )}
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>

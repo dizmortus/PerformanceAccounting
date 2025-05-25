@@ -83,8 +83,7 @@ export const createStudent = async (req, res) => {
     });
   }
 };
-// Update student
-// Update student
+
 // Update student
 export const updateStudent = async (req, res) => {
   const { id: oldId } = req.params;

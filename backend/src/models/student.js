@@ -25,7 +25,9 @@ export default (sequelize, DataTypes) => {
     groupId: {
       type: DataTypes.BIGINT,
       references: {
-        model: 'Группы',
+        model: {
+          tableName: 'Группы' // Явное указание имени таблицы
+        },
         key: 'ID'
       },
       allowNull: false,

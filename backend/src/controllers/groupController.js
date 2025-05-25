@@ -27,17 +27,27 @@ export const getGroupById = async (req, res) => {
         console.error("Ошибка при получении данных группы:", error);
         res.status(500).json({ error: "Ошибка сервера" });
     }
-};
-export const getAllGroups = async (req, res) => {
+};export const getAllGroups = async (req, res) => {
     try {
         console.log("Запрос на получение списка групп");
 
         const whereSpecialty = {};
-
         if (req.user.facultyId) {
             console.log("Применяется фильтр по факультету:", req.user.facultyId);
             whereSpecialty.facultyId = req.user.facultyId;
         }
+
+        const now = new Date();
+        const calculateCurrentSemester = (admissionYear) => {
+            const currentYear = now.getFullYear();
+            const month = now.getMonth() + 1;
+            let yearsPassed = currentYear - admissionYear;
+
+            if (month >= 1 && month < 9) yearsPassed -= 1;
+
+            const isFirstSemester = (month >= 9) || (month === 1 && now.getDate() <= 15);
+            return (yearsPassed * 2) + (isFirstSemester ? 1 : 2);
+        };
 
         const groups = await Group.findAll({
             attributes: [
@@ -49,18 +59,28 @@ export const getAllGroups = async (req, res) => {
             ],
             include: [{
                 model: Specialty,
-                as: 'specialty', // Указываем алиас, который использовали в ассоциации
-                attributes: [], // Не включаем поля Specialty в результат
+                as: 'specialty',
+                attributes: ["coursesCount"],
                 where: whereSpecialty
             }]
         });
 
+        const enrichedGroups = groups.map(group => {
+            const groupData = group.toJSON();
+            const currentSemester = calculateCurrentSemester(groupData.admissionYear);
+            return {
+                ...groupData,
+                coursesCount: groupData.specialty?.coursesCount || null,
+                currentSemester
+            };
+        });
+
         console.log("Полученные группы:");
-        groups.forEach((group, index) => {
+        enrichedGroups.forEach((group, index) => {
             console.log(`Группа #${index + 1}:`, JSON.stringify(group, null, 2));
         });
 
-        res.json(groups);
+        res.json(enrichedGroups);
     } catch (error) {
         console.error("Ошибка при получении списка групп:", error);
         res.status(500).json({ 
@@ -69,6 +89,7 @@ export const getAllGroups = async (req, res) => {
         });
     }
 };
+
 
 
 export const createGroup = async (req, res) => {
@@ -308,7 +329,8 @@ export const deleteGroup = async (req, res) => {
 
         // Проверяем, есть ли связанные студенты или ведомости
         const studentsCount = await group.countStudents();
-        const statementsCount = await group.countStatements();
+const statementsCount = await group.countGroupStatements();
+
 
         if (studentsCount > 0 || statementsCount > 0) {
             return res.status(400).json({ 
@@ -342,7 +364,7 @@ export const hasGroupDependencies = async (req, res) => {
         }
 
         const studentsCount = await group.countStudents();
-        const statementsCount = await group.countStatements();
+const statementsCount = await group.countGroupStatements();
         const hasDependencies = studentsCount > 0 || statementsCount > 0;
 
         res.json({

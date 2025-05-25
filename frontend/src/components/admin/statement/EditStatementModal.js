@@ -48,6 +48,27 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
         classTeacherFacultyId: statement?.classTeacherFacultyId || defaultFacultyId || null
     });
 
+    // Получаем список групп
+    const { data: groups = [] } = useQuery({
+        queryKey: ['groups'],
+        queryFn: fetchAllGroups,
+        staleTime: 60 * 1000
+    });
+
+    // Получаем текущую группу и максимальный семестр
+    const currentGroup = groups.find(g => g.id === localStatement.groupId);
+    const maxSemester = currentGroup ? currentGroup.coursesCount * 2 : 10;
+
+    // Устанавливаем семестр по умолчанию при изменении группы
+    useEffect(() => {
+        if (currentGroup) {
+            setLocalStatement(prev => ({
+                ...prev,
+                semester: currentGroup.currentSemester || prev.semester || ""
+            }));
+        }
+    }, [localStatement.groupId, currentGroup]);
+
     // Обновляем состояние при получении данных о факультетах
     useEffect(() => {
         if (defaultFacultyId && !localStatement.teacherFacultyId) {
@@ -87,12 +108,6 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
             ...d,
             isPractice: d.isPractice || [1, 2, 3].includes(d.id)
         }))
-    });
-
-    const { data: groups = [] } = useQuery({
-        queryKey: ['groups'],
-        queryFn: fetchAllGroups,
-        staleTime: 60 * 1000
     });
 
     // Опции для типов аттестации
@@ -215,8 +230,6 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
             return;
         }
     
-      
-    
         const value = e.target.value;
         const newState = {
             ...localStatement,
@@ -286,8 +299,8 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
             }
         }
 
-        if (statementData.semester < 1 || statementData.semester > 10) {
-            errors.semester = "Семестр должен быть числом от 1 до 10";
+        if (statementData.semester < 1 || statementData.semester > maxSemester) {
+            errors.semester = `Семестр должен быть числом от 1 до ${maxSemester}`;
         }
 
         if (statementData.practiceHours <= 0) {
@@ -392,18 +405,39 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
                             />
                         </div>
 
-                        {/* Group dropdown */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Группа</label>
-                            <SearchableSelect
-                                options={groups}
-                                value={localStatement.groupId || ""}
-                                onChange={(value) => setLocalStatement({ ...localStatement, groupId: value })}
-                                placeholder="Выберите группу"
-                                error={validationErrors.groupId}
-                                formatOption={(group) => group.id}
-                                searchBy={(group) => group.id.toLowerCase()}
-                            />
+                        {/* Group and Semester row */}
+                        <div className="flex gap-2">
+                            {/* Group dropdown */}
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700">Группа</label>
+                                <SearchableSelect
+                                    options={groups}
+                                    value={localStatement.groupId || ""}
+                                    onChange={(value) => setLocalStatement({ ...localStatement, groupId: value })}
+                                    placeholder="Выберите группу"
+                                    error={validationErrors.groupId}
+                                    formatOption={(group) => group.id}
+                                    searchBy={(group) => group.id.toLowerCase()}
+                                />
+                            </div>
+
+                            {/* Semester input */}
+                            <div className="w-24">
+                                <label className="block text-sm font-medium text-gray-700">Семестр</label>
+                                <input
+                                    type="number"
+                                    value={localStatement.semester || ""}
+                                    onChange={(e) => handleChange(e, "semester")}
+                                    min="1"
+                                    max={maxSemester}
+                                    className={`w-full px-2 py-1 border rounded-lg ${
+                                        validationErrors.semester ? "border-red-500" : "border-gray-300"
+                                    }`}
+                                />
+                                {validationErrors.semester && (
+                                    <p className="text-red-500 text-sm mt-1">{validationErrors.semester}</p>
+                                )}
+                            </div>
                         </div>
 
                         {/* Teacher block */}
@@ -470,24 +504,6 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
                             </div>
                         )}
 
-                        {/* Semester input */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Семестр</label>
-                            <input
-                                type="number"
-                                value={localStatement.semester || ""}
-                                onChange={(e) => handleChange(e, "semester")}
-                                min="1"
-                                max="10"
-                                className={`w-full px-2 py-1 border rounded-lg ${
-                                    validationErrors.semester ? "border-red-500" : ""
-                                }`}
-                            />
-                            {validationErrors.semester && (
-                                <p className="text-red-500 text-sm mt-1">{validationErrors.semester}</p>
-                            )}
-                        </div>
-
                         {/* Date input */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Дата (необязательно)</label>
@@ -496,7 +512,7 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
                                 value={localStatement.date?.split('T')[0] || ""}
                                 onChange={(e) => handleChange(e, "date")}
                                 className={`w-full px-2 py-1 border rounded-lg ${
-                                    validationErrors.date ? "border-red-500" : ""
+                                    validationErrors.date ? "border-red-500" : "border-gray-300"
                                 }`}
                             />
                             {validationErrors.date && (
@@ -504,45 +520,45 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
                             )}
                         </div>
 
-{/* Practice hours and credit units */}
-<div className="flex gap-4">
-    <div className="flex-1 relative">
-        <label className="block text-sm font-medium text-gray-700">
-            Часы практики
-            {isSearchingStatement && (
-                <span className="ml-2 text-xs text-gray-500">(поиск...)</span>
-            )}
-        </label>
-        <input
-            type="number"
-            value={localStatement.practiceHours || ""}
-            onChange={(e) => handleChange(e, "practiceHours")}
-            min="1"
-            className={`w-full px-2 py-1 border rounded-lg ${
-                validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
-            }`}
-        />
-        {validationErrors.practiceHours && (
-            <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
-        )}
-    </div>
+                        {/* Practice hours and credit units */}
+                        <div className="flex gap-4">
+                            <div className="flex-1 relative">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Часы практики
+                                    {isSearchingStatement && (
+                                        <span className="ml-2 text-xs text-gray-500">(поиск...)</span>
+                                    )}
+                                </label>
+                                <input
+                                    type="number"
+                                    value={localStatement.practiceHours || ""}
+                                    onChange={(e) => handleChange(e, "practiceHours")}
+                                    min="1"
+                                    className={`w-full px-2 py-1 border rounded-lg ${
+                                        validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
+                                    }`}
+                                />
+                                {validationErrors.practiceHours && (
+                                    <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
+                                )}
+                            </div>
 
-    <div className="flex-1">
-        <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
-        <input
-            type="number"
-            value={localStatement.creditUnits || ""}
-            onChange={(e) => handleChange(e, "creditUnits")}
-            min="1"
-            className={`w-full px-2 py-1 border rounded-lg ${
-                validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
-            }`}
-        />
-        {validationErrors.creditUnits && (
-            <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
-        )}
-    </div>
-</div>
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
+                                <input
+                                    type="number"
+                                    value={localStatement.creditUnits || ""}
+                                    onChange={(e) => handleChange(e, "creditUnits")}
+                                    min="1"
+                                    className={`w-full px-2 py-1 border rounded-lg ${
+                                        validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
+                                    }`}
+                                />
+                                {validationErrors.creditUnits && (
+                                    <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     <div className="flex justify-between mt-6">
