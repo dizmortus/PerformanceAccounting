@@ -280,57 +280,58 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
         return ["Зачет", "Экзамен", "Дифференцированный зачет"];
     };
 
-    // Обработчик сохранения
     const handleSave = async (overrideData = null) => {
-        const statementData = overrideData || localStatement;
+    const statementData = overrideData || localStatement;
 
-        const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "creditUnits"];
-        const errors = {};
+    const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "creditUnits"];
+    const errors = {};
 
-        requiredFields.forEach((field) => {
-            if (!statementData[field] && statementData[field] !== 0) {
-                errors[field] = "Это поле обязательно для заполнения";
-            }
-        });
-
-        if (["зачет", "экзамен", "дифференцированный зачет"].includes(statementData.assessmentType)) {
-            if (!statementData.classTeacherLogin) {
-                errors.classTeacherLogin = "Преподаватель занятий обязателен для выбранного типа аттестации";
-            }
+    requiredFields.forEach((field) => {
+        if (!statementData[field] && statementData[field] !== 0) {
+            errors[field] = "Это поле обязательно для заполнения";
         }
+    });
 
-        if (statementData.semester < 1 || statementData.semester > maxSemester) {
-            errors.semester = `Семестр должен быть числом от 1 до ${maxSemester}`;
+    if (["зачет", "экзамен", "дифференцированный зачет"].includes(statementData.assessmentType)) {
+        if (!statementData.classTeacherLogin) {
+            errors.classTeacherLogin = "Преподаватель занятий обязателен для выбранного типа аттестации";
         }
+    }
 
-        if (statementData.practiceHours <= 0) {
-            errors.practiceHours = "Часы практики должны быть больше 0";
-        }
+    if (statementData.semester < 1 || statementData.semester > maxSemester) {
+        errors.semester = `Семестр должен быть числом от 1 до ${maxSemester}`;
+    }
 
-        if (statementData.creditUnits <= 0) {
-            errors.creditUnits = "Зачетные единицы должны быть больше 0";
-        }
+    // Modified validation for practice hours
+    if (statementData.assessmentType !== "курсовой проект" && statementData.practiceHours <= 0) {
+        errors.practiceHours = "Часы практики должны быть больше 0";
+    }
 
-        if (statementData.date && isNaN(new Date(statementData.date).getTime())) {
-            errors.date = "Некорректная дата";
-        }
+    // Modified validation for credit units
+    if (statementData.assessmentType !== "курсовой проект" && statementData.creditUnits <= 0) {
+        errors.creditUnits = "Зачетные единицы должны быть больше 0";
+    }
 
-        if (Object.keys(errors).length > 0) {
-            setValidationErrors(errors);
-            return;
-        }
+    if (statementData.date && isNaN(new Date(statementData.date).getTime())) {
+        errors.date = "Некорректная дата";
+    }
 
-        const statementToUpdate = {
-            ...statementData,
-            date: statementData.date ? new Date(statementData.date).toISOString() : null,
-            creditUnits: parseInt(statementData.creditUnits),
-            classTeacherLogin: ["экзамен", "зачет", "дифференцированный зачет"].includes(statementData.assessmentType)
-                ? statementData.classTeacherLogin
-                : null
-        };
+    if (Object.keys(errors).length > 0) {
+        setValidationErrors(errors);
+        return;
+    }
 
-        updateStatementMutation.mutate({ id: statementData.id, data: statementToUpdate });
+    const statementToUpdate = {
+        ...statementData,
+        date: statementData.date ? new Date(statementData.date).toISOString() : null,
+        creditUnits: parseInt(statementData.creditUnits),
+        classTeacherLogin: ["экзамен", "зачет", "дифференцированный зачет"].includes(statementData.assessmentType)
+            ? statementData.classTeacherLogin
+            : null
     };
+
+    updateStatementMutation.mutate({ id: statementData.id, data: statementToUpdate });
+};
 
     // Обработчики удаления и очистки
     const handleDelete = async () => {
@@ -520,45 +521,45 @@ const EditStatementModal = ({ statement, onClose, currentUser }) => {
                             )}
                         </div>
 
-                        {/* Practice hours and credit units */}
-                        <div className="flex gap-4">
-                            <div className="flex-1 relative">
-                                <label className="block text-sm font-medium text-gray-700">
-                                    Часы практики
-                                    {isSearchingStatement && (
-                                        <span className="ml-2 text-xs text-gray-500">(поиск...)</span>
-                                    )}
-                                </label>
-                                <input
-                                    type="number"
-                                    value={localStatement.practiceHours || ""}
-                                    onChange={(e) => handleChange(e, "practiceHours")}
-                                    min="1"
-                                    className={`w-full px-2 py-1 border rounded-lg ${
-                                        validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
-                                    }`}
-                                />
-                                {validationErrors.practiceHours && (
-                                    <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
-                                )}
-                            </div>
+{/* Practice hours and credit units */}
+<div className="flex gap-4">
+    <div className="flex-1 relative">
+        <label className="block text-sm font-medium text-gray-700">
+            Часы практики
+            {isSearchingStatement && (
+                <span className="ml-2 text-xs text-gray-500">(поиск...)</span>
+            )}
+        </label>
+        <input
+            type="number"
+            value={localStatement.practiceHours ?? ""}
+            onChange={(e) => handleChange(e, "practiceHours")}
+            min={localStatement.assessmentType === "курсовой проект" ? "0" : "1"}
+            className={`w-full px-2 py-1 border rounded-lg ${
+                validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
+            }`}
+        />
+        {validationErrors.practiceHours && (
+            <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
+        )}
+    </div>
 
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
-                                <input
-                                    type="number"
-                                    value={localStatement.creditUnits || ""}
-                                    onChange={(e) => handleChange(e, "creditUnits")}
-                                    min="1"
-                                    className={`w-full px-2 py-1 border rounded-lg ${
-                                        validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
-                                    }`}
-                                />
-                                {validationErrors.creditUnits && (
-                                    <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
-                                )}
-                            </div>
-                        </div>
+    <div className="flex-1">
+        <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
+        <input
+            type="number"
+            value={localStatement.creditUnits ?? ""}
+            onChange={(e) => handleChange(e, "creditUnits")}
+            min={localStatement.assessmentType === "курсовой проект" ? "0" : "1"}
+            className={`w-full px-2 py-1 border rounded-lg ${
+                validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
+            }`}
+        />
+        {validationErrors.creditUnits && (
+            <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
+        )}
+    </div>
+</div>
                     </div>
 
                     <div className="flex justify-between mt-6">

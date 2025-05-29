@@ -258,7 +258,15 @@ const handleFileChange = async (e) => {
                                 disabled={importStudentsMutation.isPending}
                             >
                                 {/* Иконка Excel */}
-                                <div className="relative w-5 h-5">
+
+                                
+                                {/* Текст кнопки с тем же размером, что и у "Создать" */}
+                                {importStudentsMutation.isPending ? (
+                                    <span className="text-base">Импорт...</span>
+                                ) : (
+                                    <span className="text-base">Импорт</span>
+                                )}
+                                                                <div className="relative w-5 h-5">
                                     <div className="absolute inset-0 bg-white border border-[#217346] rounded-sm shadow-sm flex items-center justify-center">
                                         <div className="w-full h-full grid grid-cols-3 grid-rows-3 gap-[1px] p-[1px]">
                                             {Array.from({ length: 9 }).map((_, idx) => (
@@ -270,13 +278,6 @@ const handleFileChange = async (e) => {
                                         X
                                     </div>
                                 </div>
-                                
-                                {/* Текст кнопки с тем же размером, что и у "Создать" */}
-                                {importStudentsMutation.isPending ? (
-                                    <span className="text-base">Импорт...</span>
-                                ) : (
-                                    <span className="text-base">Импорт</span>
-                                )}
                             </label>
                         </div>
                     </div>

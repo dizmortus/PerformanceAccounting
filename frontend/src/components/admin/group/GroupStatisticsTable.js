@@ -273,6 +273,12 @@ const GroupStatisticsTable = ({ onCancel }) => {
     disabled={isStatsLoading || !filters.groupId}
 >
     {/* Иконка Excel */}
+    
+    {isStatsLoading ? (
+        <span className="text-base">Экспорт...</span>
+    ) : (
+        <span className="text-base">Экспорт</span>
+    )}
     <div className="relative w-5 h-5">
         <div className="absolute inset-0 bg-white border border-[#217346] rounded-sm shadow-sm flex items-center justify-center">
             <div className="w-full h-full grid grid-cols-3 grid-rows-3 gap-[1px] p-[1px]">
@@ -285,11 +291,6 @@ const GroupStatisticsTable = ({ onCancel }) => {
             X
         </div>
     </div>
-    {isStatsLoading ? (
-        <span className="text-base">Экспорт...</span>
-    ) : (
-        <span className="text-base">Экспорт</span>
-    )}
 </button>
 </div>
             

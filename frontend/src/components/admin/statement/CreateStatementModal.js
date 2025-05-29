@@ -206,55 +206,56 @@ const CreateStatementModal = ({ onClose, currentUser }) => {
             }));
         }
     };
+const handleCreate = async () => {
+    const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "creditUnits"];
+    const errors = {};
 
-    const handleCreate = async () => {
-        const requiredFields = ["teacherLogin", "disciplineId", "groupId", "practiceHours", "semester", "assessmentType", "creditUnits"];
-        const errors = {};
-    
-        requiredFields.forEach((field) => {
-            if (!localStatement[field] && localStatement[field] !== 0) {
-                errors[field] = "Это поле обязательно для заполнения";
-            }
-        });
-    
-        if (["зачет", "экзамен", "дифференцированный зачет"].includes(localStatement.assessmentType)) {
-            if (!localStatement.classTeacherLogin) {
-                errors.classTeacherLogin = "Преподаватель занятий обязателен для выбранного типа аттестации";
-            }
+    requiredFields.forEach((field) => {
+        if (!localStatement[field] && localStatement[field] !== 0) {
+            errors[field] = "Это поле обязательно для заполнения";
         }
-    
-        if (localStatement.semester < 1 || localStatement.semester > maxSemester) {
-            errors.semester = `Семестр должен быть числом от 1 до ${maxSemester}`;
+    });
+
+    if (["зачет", "экзамен", "дифференцированный зачет"].includes(localStatement.assessmentType)) {
+        if (!localStatement.classTeacherLogin) {
+            errors.classTeacherLogin = "Преподаватель занятий обязателен для выбранного типа аттестации";
         }
-    
-        if (localStatement.practiceHours <= 0) {
-            errors.practiceHours = "Часы практики должны быть больше 0";
-        }
-    
-        if (localStatement.creditUnits <= 0) {
-            errors.creditUnits = "Зачетные единицы должны быть больше 0";
-        }
-    
-        if (localStatement.date && isNaN(new Date(localStatement.date).getTime())) {
-            errors.date = "Некорректная дата";
-        }
-    
-        if (Object.keys(errors).length > 0) {
-            setValidationErrors(errors);
-            return;
-        }
-    
-        const statementToCreate = {
-            ...localStatement,
-            date: localStatement.date ? new Date(localStatement.date).toISOString() : null,
-            creditUnits: parseInt(localStatement.creditUnits),
-            classTeacherLogin: ["экзамен", "зачет", "дифференцированный зачет"].includes(localStatement.assessmentType)
-                ? localStatement.classTeacherLogin
-                : null
-        };
-    
-        createStatementMutation.mutate(statementToCreate);
+    }
+
+    if (localStatement.semester < 1 || localStatement.semester > maxSemester) {
+        errors.semester = `Семестр должен быть числом от 1 до ${maxSemester}`;
+    }
+
+    // Modified validation for practice hours
+    if (localStatement.assessmentType !== "курсовой проект" && localStatement.practiceHours <= 0) {
+        errors.practiceHours = "Часы практики должны быть больше 0";
+    }
+
+    // Modified validation for credit units
+    if (localStatement.assessmentType !== "курсовой проект" && localStatement.creditUnits <= 0) {
+        errors.creditUnits = "Зачетные единицы должны быть больше 0";
+    }
+
+    if (localStatement.date && isNaN(new Date(localStatement.date).getTime())) {
+        errors.date = "Некорректная дата";
+    }
+
+    if (Object.keys(errors).length > 0) {
+        setValidationErrors(errors);
+        return;
+    }
+
+    const statementToCreate = {
+        ...localStatement,
+        date: localStatement.date ? new Date(localStatement.date).toISOString() : null,
+        creditUnits: parseInt(localStatement.creditUnits),
+        classTeacherLogin: ["экзамен", "зачет", "дифференцированный зачет"].includes(localStatement.assessmentType)
+            ? localStatement.classTeacherLogin
+            : null
     };
+
+    createStatementMutation.mutate(statementToCreate);
+};
 
     useEffect(() => {
         const fetchAndSetStatementData = async () => {
@@ -456,43 +457,43 @@ const CreateStatementModal = ({ onClose, currentUser }) => {
                         </div>
 
                         {/* Practice hours and credit units */}
-                        <div className="flex gap-4">
-                            {/* Practice hours input */}
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700">Часы практики</label>
-                                <input
-                                    type="number"
-                                    value={localStatement.practiceHours || ""}
-                                    onChange={(e) => handleChange(e, "practiceHours")}
-                                    min="1"
-                                    readOnly={localStatement.assessmentType === "курсовой проект"}
-                                    className={`w-full px-2 py-1 border rounded-lg ${
-                                        validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
-                                    } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
-                                />
-                                {validationErrors.practiceHours && (
-                                    <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
-                                )}
-                            </div>
+                       <div className="flex gap-4">
+    {/* Practice hours input */}
+    <div className="flex-1">
+        <label className="block text-sm font-medium text-gray-700">Часы практики</label>
+        <input
+            type="number"
+            value={localStatement.practiceHours || ""}
+            onChange={(e) => handleChange(e, "practiceHours")}
+            min={localStatement.assessmentType === "курсовой проект" ? "0" : "1"}
+            readOnly={localStatement.assessmentType === "курсовой проект"}
+            className={`w-full px-2 py-1 border rounded-lg ${
+                validationErrors.practiceHours ? "border-red-500" : "border-gray-300"
+            } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
+        />
+        {validationErrors.practiceHours && (
+            <p className="text-red-500 text-sm mt-1">{validationErrors.practiceHours}</p>
+        )}
+    </div>
 
-                            {/* Credit units input */}
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
-                                <input
-                                    type="number"
-                                    value={localStatement.creditUnits || ""}
-                                    onChange={(e) => handleChange(e, "creditUnits")}
-                                    min="1"
-                                    readOnly={localStatement.assessmentType === "курсовой проект"}
-                                    className={`w-full px-2 py-1 border rounded-lg ${
-                                        validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
-                                    } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
-                                />
-                                {validationErrors.creditUnits && (
-                                    <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
-                                )}
-                            </div>
-                        </div>
+    {/* Credit units input */}
+    <div className="flex-1">
+        <label className="block text-sm font-medium text-gray-700">Зачетные единицы</label>
+        <input
+            type="number"
+            value={localStatement.creditUnits || ""}
+            onChange={(e) => handleChange(e, "creditUnits")}
+            min={localStatement.assessmentType === "курсовой проект" ? "0" : "1"}
+            readOnly={localStatement.assessmentType === "курсовой проект"}
+            className={`w-full px-2 py-1 border rounded-lg ${
+                validationErrors.creditUnits ? "border-red-500" : "border-gray-300"
+            } ${localStatement.assessmentType === "курсовой проект" ? "bg-gray-100" : ""}`}
+        />
+        {validationErrors.creditUnits && (
+            <p className="text-red-500 text-sm mt-1">{validationErrors.creditUnits}</p>
+        )}
+    </div>
+</div>
                     </div>
 
                     {/* Action buttons */}
@@ -539,7 +540,14 @@ const CreateStatementModal = ({ onClose, currentUser }) => {
                                     `}
                                 disabled={importStatementsMutation.isPending}
                             >
-                                <div className="relative w-5 h-5">
+
+                                
+                                {importStatementsMutation.isPending ? (
+                                    <span className="text-base">Импорт...</span>
+                                ) : (
+                                    <span className="text-base">Импорт</span>
+                                )}
+                                                                <div className="relative w-5 h-5">
                                     <div className="absolute inset-0 bg-white border border-[#217346] rounded-sm shadow-sm flex items-center justify-center">
                                         <div className="w-full h-full grid grid-cols-3 grid-rows-3 gap-[1px] p-[1px]">
                                             {Array.from({ length: 9 }).map((_, idx) => (
@@ -551,12 +559,6 @@ const CreateStatementModal = ({ onClose, currentUser }) => {
                                         X
                                     </div>
                                 </div>
-                                
-                                {importStatementsMutation.isPending ? (
-                                    <span className="text-base">Импорт...</span>
-                                ) : (
-                                    <span className="text-base">Импорт</span>
-                                )}
                             </label>
                        
                     </div>
