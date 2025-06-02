@@ -81,8 +81,8 @@ export const initiatePasswordReset = async (login) => {
 
         return data;
     } catch (error) {
-        console.error('Ошибка при инициации сброса пароля:', error);
-        throw new Error('Сервер недоступен. Пожалуйста, попробуйте позже.');
+        //console.error('Ошибка при инициации сброса пароля:', error);
+        throw new Error(error.message);
     }
 };
 
@@ -111,8 +111,8 @@ export const verifyResetCode = async (login, code) => {
 
         return data;
     } catch (error) {
-        console.error('Ошибка при подтверждении кода:', error);
-        throw new Error(error.message || 'Ошибка при проверке кода');
+        //console.error('Ошибка при подтверждении кода:', error);
+        throw new Error(error.message);
     }
 };
 
